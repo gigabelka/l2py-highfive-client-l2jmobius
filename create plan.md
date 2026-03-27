@@ -759,7 +759,7 @@ Verify checksum:
   - async enter(
         username: str,
         password: str,
-        host: str = "127.0.0.1",
+        host: str = "192.168.0.33",
         port: int = 2106,
         server_id: int = 1,
         char_slot: int = 0
@@ -782,13 +782,13 @@ Verify checksum:
 
   import asyncio
   from l2py import L2Client
-
+`
   async def main():
       client = L2Client()
       session = await client.enter(
-          username="admin",
-          password="admin",
-          host="127.0.0.1",
+          username="qwerty",
+          password="qwerty",
+          host="192.168.0.33",
           server_id=1,
           char_slot=0,
       )

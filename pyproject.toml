@@ -1,0 +1,70 @@
+# -*- coding: utf-8 -*-
+"""pyproject.toml для l2py — asyncio-клиент Lineage 2 High Five."""
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "l2py"
+version = "0.1.0"
+description = "Asyncio-клиент для Lineage 2 High Five (L2JMobius)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">= 3.14"
+authors = [
+    {name = "L2Py Contributors"},
+]
+keywords = ["lineage2", "l2", "highfive", "bot", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Games/Entertainment :: Role-Playing",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "pycryptodome >= 3.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8.0",
+    "pytest-asyncio >= 0.23",
+    "ruff >= 0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/l2py/l2py-highfive-client"
+Repository = "https://github.com/l2py/l2py-highfive-client"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/l2py"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "W",   # pycodestyle warnings
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+ignore = ["E501"]  # line too long (handled by formatter)
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]

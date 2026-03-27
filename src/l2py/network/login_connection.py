@@ -1,0 +1,184 @@
+# -*- coding: utf-8 -*-
+"""TCP-соединение с Login Server.
+
+Асинхронное соединение с использованием asyncio.
+Поддерживает шифрование LoginCrypt.
+"""
+
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from l2py.crypto.login_crypt import LoginCrypt
+    from l2py.protocol.base import ClientPacket
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_TIMEOUT = 10.0  # seconds
+
+
+class LoginConnection:
+    """TCP-соединение с Login Server.
+
+    Управляет подключением, чтением и записью пакетов.
+    Использует LoginCrypt для шифрования/дешифрования.
+    """
+
+    __slots__ = (
+        "_host",
+        "_port",
+        "_crypt",
+        "_reader",
+        "_writer",
+        "_is_first_packet",
+        "_connected",
+    )
+
+    def __init__(self, host: str, port: int, crypt: "LoginCrypt") -> None:
+        """Инициализация соединения.
+
+        Args:
+            host: Адрес Login Server.
+            port: Порт Login Server (обычно 2106).
+            crypt: Объект криптографии.
+        """
+        self._host = host
+        self._port = port
+        self._crypt = crypt
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
+        self._is_first_packet = True
+        self._connected = False
+
+    async def connect(self) -> None:
+        """Устанавливает TCP-соединение с сервером.
+
+        Raises:
+            ConnectionError: Если не удалось подключиться.
+            asyncio.TimeoutError: Если превышен таймаут.
+        """
+        try:
+            self._reader, self._writer = await asyncio.wait_for(
+                asyncio.open_connection(self._host, self._port),
+                timeout=DEFAULT_TIMEOUT,
+            )
+            self._connected = True
+            logger.info(f"Connected to Login Server at {self._host}:{self._port}")
+        except (asyncio.TimeoutError, OSError) as e:
+            raise ConnectionError(
+                f"Failed to connect to Login Server: {e}"
+            ) from e
+
+    async def read_packet(self) -> tuple[int, bytes]:
+        """Читает пакет от сервера.
+
+        Читает длину (2 байта), затем тело пакета.
+        Дешифрует данные согласно протоколу:
+        - Первый пакет (Init) — через decrypt_init
+        - Остальные пакеты — через decrypt с checksum
+
+        Returns:
+            Кортеж (opcode, data), где data — тело пакета без опкода.
+
+        Raises:
+            ConnectionError: Если соединение закрыто.
+            asyncio.TimeoutError: Если превышен таймаут.
+        """
+        if not self._connected or self._reader is None:
+            raise ConnectionError("Not connected")
+
+        try:
+            # Читаем длину (2 байта, uint16 LE)
+            length_bytes = await asyncio.wait_for(
+                self._reader.readexactly(2),
+                timeout=DEFAULT_TIMEOUT,
+            )
+            length = int.from_bytes(length_bytes, "little")
+
+            if length < 2:
+                raise ConnectionError(f"Invalid packet length: {length}")
+
+            # Читаем тело пакета
+            body = await asyncio.wait_for(
+                self._reader.readexactly(length - 2),
+                timeout=DEFAULT_TIMEOUT,
+            )
+
+            # Дешифруем
+            if self._is_first_packet:
+                decrypted = self._crypt.decrypt_init(body)
+                self._is_first_packet = False
+            else:
+                decrypted = self._crypt.decrypt(body)
+
+            # Первый байт = opcode
+            opcode = decrypted[0]
+            data = decrypted[1:]
+
+            logger.debug(
+                f"[Login] Received packet: opcode=0x{opcode:02X}, length={len(data)}"
+            )
+
+            return opcode, data
+
+        except asyncio.IncompleteReadError as e:
+            raise ConnectionError(
+                f"Connection closed while reading packet: {e}"
+            ) from e
+        except asyncio.TimeoutError:
+            raise
+
+    async def send_packet(self, packet: "ClientPacket") -> None:
+        """Отправляет пакет на сервер.
+
+        Args:
+            packet: Пакет для отправки.
+
+        Raises:
+            ConnectionError: Если не подключены.
+        """
+        if not self._connected or self._writer is None:
+            raise ConnectionError("Not connected")
+
+        # Сериализуем пакет
+        data = packet.to_bytes()
+
+        # Шифруем
+        encrypted = self._crypt.encrypt(data)
+
+        # Формируем пакет с длиной
+        length = len(encrypted) + 2
+        packet_bytes = length.to_bytes(2, "little") + encrypted
+
+        # Отправляем
+        self._writer.write(packet_bytes)
+        await self._writer.drain()
+
+        logger.debug(
+            f"[Login] Sent packet: opcode=0x{packet.opcode:02X}, "
+            f"length={len(data)}"
+        )
+
+    async def close(self) -> None:
+        """Закрывает соединение."""
+        if self._writer is not None:
+            self._writer.close()
+            try:
+                await self._writer.wait_closed()
+            except Exception:
+                pass
+        self._connected = False
+        logger.info("Disconnected from Login Server")
+
+    async def __aenter__(self) -> "LoginConnection":
+        """Асинхронный контекстный менеджер — вход."""
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Асинхронный контекстный менеджер — выход."""
+        await self.close()
+
+
+__all__ = ["LoginConnection"]
