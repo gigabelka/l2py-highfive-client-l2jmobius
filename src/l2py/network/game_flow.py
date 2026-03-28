@@ -137,9 +137,9 @@ class GameFlow:
             )
             auth_bytes = auth_packet.to_bytes()
             logger.debug(f"AuthLogin raw bytes: {auth_bytes.hex()}")
-            logger.debug(f"Key before send: {crypt._encrypt_key.hex()}")
+            logger.debug(f"Key before send: {crypt._encrypt_key.hex() if crypt._encrypt_key else 'not set'}")
             await conn.send_packet(auth_packet)
-            logger.debug(f"Key after send: {crypt._encrypt_key.hex()}")
+            logger.debug(f"Key after send: {crypt._encrypt_key.hex() if crypt._encrypt_key else 'not set'}")
 
             # Шаг 4: Получаем список персонажей
             logger.debug("Waiting for CharSelectionInfo...")

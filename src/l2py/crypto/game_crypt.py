@@ -16,14 +16,13 @@ class GameCrypt:
     - Ключ обновляется после каждой операции
     """
 
-    __slots__ = ("_decrypt_key", "_encrypt_key", "_enabled", "_first_encrypt")
+    __slots__ = ("_decrypt_key", "_encrypt_key", "_enabled")
 
     def __init__(self) -> None:
         """Инициализация криптографии (disabled по умолчанию)."""
         self._decrypt_key: bytearray | None = None
         self._encrypt_key: bytearray | None = None
         self._enabled = False
-        self._first_encrypt = True
 
     @property
     def enabled(self) -> bool:
@@ -48,9 +47,6 @@ class GameCrypt:
         self._encrypt_key = bytearray(full_key)
         # Включаем шифрование
         self._enabled = True
-        # Сбрасываем флаг первого encrypt
-        # (первый исходящий пакет не шифруется, как в L2JMobius)
-        self._first_encrypt = True
 
     def decrypt(self, data: bytes) -> bytes:
         """Дешифрует данные (точно как в Encryption.decrypt).
@@ -103,11 +99,8 @@ class GameCrypt:
         if self._encrypt_key is None:
             return data
 
-        # Первый вызов encrypt() НЕ шифрует пакет (как в L2JMobius Encryption.java)
-        if self._first_encrypt:
-            self._first_encrypt = False
-            return data
-
+        # Зашифровать все пакеты (Raw packets вроде ProtocolVersion отправляются минуя GameCrypt)
+        
         result = bytearray(data)
         size = len(result)
         

@@ -23,14 +23,15 @@ class KeyPacket(ServerPacket):
     """
 
     opcode: ClassVar[int] = 0x2E  # TODO: Verify for High Five
-    __slots__ = ("enabled", "xor_key", "server_id", "obfuscation_key")
+    __slots__ = ("enabled", "xor_key", "server_id", "obfuscation_key", "result")
 
     def __init__(self, data: bytes) -> None:
-        """Инициализация и парсинг пакета.
+        """Инициализирует и парсит пакет KeyPacket.
 
         Args:
             data: Данные пакета (без опкода).
         """
+        self.result: int = 0
         self.enabled: bool = False
         self.xor_key: bytes = b""
         self.server_id: int = 0
@@ -39,14 +40,18 @@ class KeyPacket(ServerPacket):
 
     def _read(self) -> None:
         """Парсит поля пакета."""
-        # Первая версия парсинга (может отличаться для L2JMobius)
-        self.enabled = self._reader.read_byte() != 0
+        self.result = self._reader.read_byte()
         self.xor_key = self._reader.read_bytes(8)
-        # Пропускаем промежуточные поля если есть
+        
         if self._reader.remaining() >= 4:
-            self._reader.skip(4)  # Unknown
+            self.enabled = self._reader.read_int32() != 0
+            
         if self._reader.remaining() >= 4:
             self.server_id = self._reader.read_int32()
+            
+        if self._reader.remaining() >= 1:
+            self._reader.skip(1)  # obfuscation flag
+            
         if self._reader.remaining() >= 4:
             self.obfuscation_key = self._reader.read_int32()
 

@@ -41,7 +41,7 @@ l2py/
 │   │   ├── blowfish_engine.py   # Движок Blowfish (порт из L2JMobius)
 │   │   ├── login_crypt.py       # Шифрование для Login Server (Blowfish + XOR + checksum)
 │   │   ├── game_crypt.py        # Шифрование для Game Server (XOR)
-│   │   └── rsa.py               # RSA шифрование с авто-дескремблированием
+│   │   └── rsa.py               # RSA шифрование с авто-дескремблированием для L2JMobius
 │   ├── models/                  # Модели данных
 │   │   ├── character.py         # CharacterInfo (frozen dataclass)
 │   │   └── server.py            # GameServer (frozen dataclass)
@@ -53,11 +53,11 @@ l2py/
 │   ├── protocol/                # Протокол L2
 │   │   ├── base.py              # PacketReader/PacketWriter, базовые классы пакетов
 │   │   ├── login/               # Пакеты Login Server
-│   │   │   ├── client_packets.py # AuthGameGuard, RequestAuthLogin, RequestServerList, RequestServerLogin
-│   │   │   └── server_packets.py # Init, GGAuth, LoginOk, LoginFail, PlayOk, ServerList
+│   │   │   ├── client_packets.py # AuthGameGuardPacket, RequestAuthLoginPacket, RequestServerListPacket, RequestServerLoginPacket
+│   │   │   └── server_packets.py # InitPacket, GGAuthPacket, LoginOkPacket, LoginFailPacket, ServerListPacket, PlayOkPacket
 │   │   └── game/                # Пакеты Game Server
-│   │       ├── client_packets.py # ProtocolVersion, AuthLogin, CharacterSelect, EnterWorld
-│   │       └── server_packets.py # KeyPacket, CharSelectionInfo, CharSelected, UserInfo
+│   │       ├── client_packets.py # ProtocolVersionPacket, AuthLoginPacket, CharacterSelectPacket, EnterWorldPacket
+│   │       └── server_packets.py # KeyPacket, CharSelectionInfoPacket, CharSelectedPacket, UserInfoPacket
 │   └── debug/                   # Отладочные утилиты
 │       └── packet_inspector.py  # Анализ пакетов, hex dump, диагностика
 ├── tests/                       # Тесты
@@ -292,16 +292,16 @@ inspector.log_packet_analysis(analysis, "context")
 
 ### Криптография
 
-- `L2Blowfish` — блочное шифрование (8-байтные блоки, ECB режим)
-- `L2RSA` — асимметричное шифрование для авторизации с авто-дескремблированием
+- `L2Blowfish` — блочное шифрование (8-байтные блоки, ECB режим), использует BlowfishEngine портированный из L2JMobius
+- `L2RSA` — асимметричное шифрование для авторизации с авто-дескремблированием (L2JMobius scramble алгоритм)
 - `LoginCrypt` — Blowfish + XOR + checksum для Login Server
-- `GameCrypt` — XOR шифрование для Game Server
+- `GameCrypt` — XOR шифрование для Game Server (динамический ключ + статический STATIC_KEY)
 
 ### Важные замечания
 
-- RSA-ключи требуют дескремблирования (`unscramble_modulus`) для L2JMobius
-- Статические ключи определены в соответствующих модулях криптографии
-- Первый пакет (Init) шифруется иначе, чем последующие (через `decrypt_init`)
+- RSA-ключи требуют дескремблирования (`unscramble_modulus`) для L2JMobius (4 шага: XOR + swap)
+- Статические ключи определены в `login_crypt.py` (STATIC_BLOWFISH_KEY, AVAILABLE_KEYS)
+- Первый пакет (Init) шифруется иначе, чем последующие (через `decrypt_init` с XOR pass)
 - Реализован авто-детект статического Blowfish-ключа при несоответствии опкода
 
 ## Login Flow Sequence
