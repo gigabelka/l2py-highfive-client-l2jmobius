@@ -10,18 +10,18 @@
 ### Key Features
 
 - Полный **login flow**: авторизация → выбор сервера → вход в мир
-- Реализована криптография: Blowfish, RSA, XOR
+- Реализована криптография: Blowfish (ECB, 8-байтные блоки), RSA (textbook, без padding), XOR
 - Типизированная система пакетов (login + game)
 - Полностью асинхронный (asyncio)
-- Типизированная система событий
-- Покрытие тестами
+- Типизированная система событий с поддержкой sync/async обработчиков
+- Покрытие тестами с mock-серверами
 
 ## Technology Stack
 
 - **Language**: Python 3.14+
 - **Build System**: Hatchling
 - **Dependencies**:
-  - `pycryptodome >= 3.20` — криптография
+  - `pycryptodome >= 3.20` — криптография (используется частично)
 - **Dev Dependencies**:
   - `pytest >= 8.0` — тестирование
   - `pytest-asyncio >= 0.23` — async тесты
@@ -75,6 +75,12 @@ l2py/
 ### Installation
 
 ```bash
+# Создание виртуального окружения
+python -m venv .venv
+
+# Активация (Windows)
+.venv\Scripts\activate
+
 # Установка в режиме разработки
 pip install -e ".[dev]"
 ```
@@ -293,7 +299,7 @@ inspector.log_packet_analysis(analysis, "context")
 
 ### Важные замечания
 
-- RSA-ключи могут требовать дескремблирования (`unscramble_modulus`)
+- RSA-ключи требуют дескремблирования (`unscramble_modulus`) для L2JMobius
 - Статические ключи определены в соответствующих модулях криптографии
 - Первый пакет (Init) шифруется иначе, чем последующие (через `decrypt_init`)
 - Реализован авто-детект статического Blowfish-ключа при несоответствии опкода
