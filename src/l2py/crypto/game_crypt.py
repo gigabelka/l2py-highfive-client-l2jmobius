@@ -12,18 +12,18 @@ class GameCrypt:
     """XOR-шифрование для пакетов Game Server.
     
     Реализует точный алгоритм из L2JMobius:
-    - Отдельные ключи для encrypt (_outKey) и decrypt (_inKey)
-    - Первый пакет после включения шифрования не шифруется
+    - Отдельные ключи для encrypt (_encrypt_key) и decrypt (_decrypt_key)
     - Ключ обновляется после каждой операции
     """
 
-    __slots__ = ("_in_key", "_out_key", "_enabled")
+    __slots__ = ("_decrypt_key", "_encrypt_key", "_enabled", "_first_encrypt")
 
     def __init__(self) -> None:
         """Инициализация криптографии (disabled по умолчанию)."""
-        self._in_key: bytearray | None = None
-        self._out_key: bytearray | None = None
+        self._decrypt_key: bytearray | None = None
+        self._encrypt_key: bytearray | None = None
         self._enabled = False
+        self._first_encrypt = True
 
     @property
     def enabled(self) -> bool:
@@ -43,11 +43,14 @@ class GameCrypt:
 
         # Собираем полный 16-байтный ключ как в BlowFishKeygen.java
         full_key = bytearray(dynamic_key + STATIC_KEY)
-        # Копируем ключ для decrypt (in) и encrypt (out)
-        self._in_key = bytearray(full_key)
-        self._out_key = bytearray(full_key)
-        # ВАЖНО: шифрование НЕ включается здесь!
-        # Оно включается при первом вызове encrypt() как в L2JMobius
+        # Копируем ключ для decrypt и encrypt
+        self._decrypt_key = bytearray(full_key)
+        self._encrypt_key = bytearray(full_key)
+        # Включаем шифрование
+        self._enabled = True
+        # Сбрасываем флаг первого encrypt
+        # (первый исходящий пакет не шифруется, как в L2JMobius)
+        self._first_encrypt = True
 
     def decrypt(self, data: bytes) -> bytes:
         """Дешифрует данные (точно как в Encryption.decrypt).
@@ -58,8 +61,12 @@ class GameCrypt:
         Returns:
             Дешифрованные данные.
         """
-        if not self._enabled or self._in_key is None:
+        if not self._enabled or self._decrypt_key is None:
             return data
+
+        # ВАЖНО: decrypt всегда расшифровывает данные если enabled
+        # (в отличие от encrypt, который пропускает первый пакет)
+        # Это потому что сервер начинает шифровать ответы сразу после AuthLogin
 
         result = bytearray(data)
         size = len(result)
@@ -67,19 +74,19 @@ class GameCrypt:
         x_or = 0
         for i in range(size):
             encrypted = result[i] & 0xFF
-            result[i] = (encrypted ^ (self._in_key[i & 15] & 0xFF) ^ x_or) & 0xFF
+            result[i] = (encrypted ^ (self._decrypt_key[i & 15] & 0xFF) ^ x_or) & 0xFF
             x_or = encrypted
 
         # Обновляем ключ (shift key)
-        old = (self._in_key[8] & 0xFF) | \
-              ((self._in_key[9] & 0xFF) << 8) | \
-              ((self._in_key[10] & 0xFF) << 16) | \
-              ((self._in_key[11] & 0xFF) << 24)
+        old = (self._decrypt_key[8] & 0xFF) | \
+              ((self._decrypt_key[9] & 0xFF) << 8) | \
+              ((self._decrypt_key[10] & 0xFF) << 16) | \
+              ((self._decrypt_key[11] & 0xFF) << 24)
         old += size
-        self._in_key[8] = old & 0xFF
-        self._in_key[9] = (old >> 8) & 0xFF
-        self._in_key[10] = (old >> 16) & 0xFF
-        self._in_key[11] = (old >> 24) & 0xFF
+        self._decrypt_key[8] = old & 0xFF
+        self._decrypt_key[9] = (old >> 8) & 0xFF
+        self._decrypt_key[10] = (old >> 16) & 0xFF
+        self._decrypt_key[11] = (old >> 24) & 0xFF
 
         return bytes(result)
 
@@ -93,13 +100,12 @@ class GameCrypt:
             Зашифрованные данные.
         """
         # Если ключ не установлен - отправляем без шифрования
-        if self._out_key is None:
+        if self._encrypt_key is None:
             return data
 
-        # Первый вызов encrypt() включает шифрование но НЕ шифрует пакет
-        # (как в L2JMobius Encryption.java)
-        if not self._enabled:
-            self._enabled = True
+        # Первый вызов encrypt() НЕ шифрует пакет (как в L2JMobius Encryption.java)
+        if self._first_encrypt:
+            self._first_encrypt = False
             return data
 
         result = bytearray(data)
@@ -108,19 +114,19 @@ class GameCrypt:
         encrypted = 0
         for i in range(size):
             raw = result[i] & 0xFF
-            encrypted = (raw ^ (self._out_key[i & 15] & 0xFF) ^ encrypted) & 0xFF
+            encrypted = (raw ^ (self._encrypt_key[i & 15] & 0xFF) ^ encrypted) & 0xFF
             result[i] = encrypted
 
         # Обновляем ключ (shift key)
-        old = (self._out_key[8] & 0xFF) | \
-              ((self._out_key[9] & 0xFF) << 8) | \
-              ((self._out_key[10] & 0xFF) << 16) | \
-              ((self._out_key[11] & 0xFF) << 24)
+        old = (self._encrypt_key[8] & 0xFF) | \
+              ((self._encrypt_key[9] & 0xFF) << 8) | \
+              ((self._encrypt_key[10] & 0xFF) << 16) | \
+              ((self._encrypt_key[11] & 0xFF) << 24)
         old += size
-        self._out_key[8] = old & 0xFF
-        self._out_key[9] = (old >> 8) & 0xFF
-        self._out_key[10] = (old >> 16) & 0xFF
-        self._out_key[11] = (old >> 24) & 0xFF
+        self._encrypt_key[8] = old & 0xFF
+        self._encrypt_key[9] = (old >> 8) & 0xFF
+        self._encrypt_key[10] = (old >> 16) & 0xFF
+        self._encrypt_key[11] = (old >> 24) & 0xFF
 
         return bytes(result)
 

@@ -47,50 +47,64 @@ class TestGameCrypt:
         assert result == data
 
     def test_encrypt_decrypt_roundtrip(self):
-        """Тест encrypt → decrypt roundtrip."""
+        """Тест encrypt → decrypt roundtrip (со второго пакета)."""
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
         plaintext = b"Hello World!"
+        # Первый encrypt не шифрует (возвращает как есть)
+        first = crypt.encrypt(plaintext)
+        assert first == plaintext
+        # Второй encrypt шифрует
         encrypted = crypt.encrypt(plaintext)
+        assert encrypted != plaintext
+        # decrypt всегда расшифровывает
         decrypted = crypt.decrypt(encrypted)
-
         assert decrypted == plaintext
 
     def test_encrypt_changes_data(self):
-        """Тест что шифрование изменяет данные."""
+        """Тест что шифрование изменяет данные (со второго пакета)."""
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
         plaintext = b"TestData1234"
+        # Первый пакет не шифруется (как в L2JMobius)
+        first = crypt.encrypt(plaintext)
+        assert first == plaintext
+        # Второй пакет шифруется
         encrypted = crypt.encrypt(plaintext)
-
         assert encrypted != plaintext
 
     def test_key_changes_after_operation(self):
-        """Тест что ключ изменяется после операции."""
+        """Тест что ключ изменяется после операции (со второго пакета)."""
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
         # Сохраняем состояние ключа
-        key_before = bytes(crypt._encrypt_key)
+        key_before = list(crypt._encrypt_key)
 
+        # Первый пакет не меняет ключ
         crypt.encrypt(b"test")
+        assert list(crypt._encrypt_key) == key_before
 
-        # Ключ должен измениться
-        assert crypt._encrypt_key != key_before
+        # Второй пакет меняет ключ
+        crypt.encrypt(b"test")
+        assert list(crypt._encrypt_key) != key_before
 
     def test_key_increments_after_bytes(self):
-        """Тест что байты 8-11 ключа инкрементируются."""
+        """Тест что байты 8-11 ключа инкрементируются (со второго пакета)."""
         crypt = GameCrypt()
         crypt.set_key(b"\x00" * 8)
 
         # Начальное значение байт 8-11
         initial_counter = int.from_bytes(crypt._encrypt_key[8:12], "little")
 
+        # Первый пакет не меняет ключ
         crypt.encrypt(b"abcd")  # 4 байта
+        assert int.from_bytes(crypt._encrypt_key[8:12], "little") == initial_counter
 
-        # Счётчик должен увеличиться на 4
+        # Счётчик должен увеличиться на 4 со второго пакета
+        crypt.encrypt(b"abcd")  # 4 байта
         new_counter = int.from_bytes(crypt._encrypt_key[8:12], "little")
         assert new_counter == initial_counter + 4
 
@@ -100,20 +114,22 @@ class TestGameCrypt:
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
         # Сохраняем начальные состояния
-        encrypt_key_before = bytes(crypt._encrypt_key)
-        decrypt_key_before = bytes(crypt._decrypt_key)
+        encrypt_key_before = list(crypt._encrypt_key)
+        decrypt_key_before = list(crypt._decrypt_key)
 
-        # Делаем encrypt
+        # Первый encrypt не меняет ключ (как в L2JMobius)
         crypt.encrypt(b"test")
+        assert list(crypt._encrypt_key) == encrypt_key_before
 
-        # Encrypt ключ изменился
-        assert crypt._encrypt_key != list(encrypt_key_before)
+        # Второй encrypt меняет ключ
+        crypt.encrypt(b"test")
+        assert list(crypt._encrypt_key) != encrypt_key_before
 
         # Decrypt ключ не изменился
-        assert crypt._decrypt_key == list(decrypt_key_before)
+        assert list(crypt._decrypt_key) == decrypt_key_before
 
     def test_multiple_encrypt_calls(self):
-        """Тест нескольких вызовов encrypt."""
+        """Тест нескольких вызовов encrypt (первый не шифруется)."""
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
@@ -126,13 +142,14 @@ class TestGameCrypt:
         encrypted2 = crypt.encrypt(plaintext2)
         encrypted3 = crypt.encrypt(plaintext3)
 
-        # Все зашифрованные данные должны отличаться от исходных
-        assert encrypted1 != plaintext1
+        # Первый пакет не шифруется (как в L2JMobius)
+        assert encrypted1 == plaintext1
+        # Остальные шифруются
         assert encrypted2 != plaintext2
         assert encrypted3 != plaintext3
 
         # Зашифрованные данные должны отличаться друг от друга
-        assert encrypted1 != encrypted2
+        assert encrypted2 != encrypted3
 
     def test_long_data(self):
         """Тест обработки длинных данных (больше ключа)."""
@@ -141,10 +158,15 @@ class TestGameCrypt:
 
         # Данные длиннее 16 байт (длина ключа)
         plaintext = b"A" * 100
+        # Первый encrypt не шифрует
+        first = crypt.encrypt(plaintext)
+        assert first == plaintext
+        # Второй encrypt шифрует
         encrypted = crypt.encrypt(plaintext)
-        decrypted = crypt.decrypt(encrypted)
-
         assert len(encrypted) == 100
+        assert encrypted != plaintext
+        # decrypt всегда расшифровывает
+        decrypted = crypt.decrypt(encrypted)
         assert decrypted == plaintext
 
     def test_empty_data(self):

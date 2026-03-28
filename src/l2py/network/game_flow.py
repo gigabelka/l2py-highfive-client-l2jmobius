@@ -124,7 +124,7 @@ class GameFlow:
             # Включаем шифрование
             if key_packet.enabled:
                 crypt.set_key(key_packet.xor_key)
-                logger.debug(f"Encryption enabled, full key: {crypt._in_key.hex()}")
+                logger.debug(f"Encryption enabled, full key: {crypt._decrypt_key.hex()}")
 
             # Шаг 3: Отправляем AuthLogin
             logger.debug("Sending AuthLogin...")
@@ -137,9 +137,9 @@ class GameFlow:
             )
             auth_bytes = auth_packet.to_bytes()
             logger.debug(f"AuthLogin raw bytes: {auth_bytes.hex()}")
-            logger.debug(f"Key before send: {crypt._out_key.hex()}")
+            logger.debug(f"Key before send: {crypt._encrypt_key.hex()}")
             await conn.send_packet(auth_packet)
-            logger.debug(f"Key after send: {crypt._out_key.hex()}")
+            logger.debug(f"Key after send: {crypt._encrypt_key.hex()}")
 
             # Шаг 4: Получаем список персонажей
             logger.debug("Waiting for CharSelectionInfo...")
