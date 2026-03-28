@@ -25,3 +25,4 @@ npm-debug.log*
 # virtual environment
 .venv
 .pytest_cache
+/__pycache__

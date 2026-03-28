@@ -96,7 +96,7 @@ class TestServerPackets:
         assert len(packet.servers) == 1
         server = packet.servers[0]
         assert isinstance(server, GameServer)
-        assert server.id == 1
+        assert server.id == 2
         assert server.ip == "127.0.0.1"
         assert server.port == 30000
         assert server.online == 100

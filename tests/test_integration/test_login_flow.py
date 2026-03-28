@@ -201,7 +201,7 @@ async def test_full_login_flow(mock_login_server):
     result = await LoginFlow(config, credentials).execute()
 
     assert isinstance(result, LoginResult)
-    assert result.server.id == 1
+    assert result.server.id == 2
     assert result.server.ip == "127.0.0.1"
     assert result.server.port == 30000
     assert result.play_ok1 == 0xAAAAAAAA

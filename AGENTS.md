@@ -36,33 +36,35 @@ l2py/
 │   ├── config.py                # Конфигурация (LoginConfig, Credentials, ConnectionConfig)
 │   ├── events.py                # Типизированная система событий
 │   ├── crypto/                  # Криптографические модули
-│   │   ├── blowfish.py          # Blowfish шифрование
-│   │   ├── login_crypt.py       # Шифрование для Login Server
-│   │   ├── game_crypt.py        # Шифрование для Game Server
-│   │   └── rsa.py               # RSA шифрование
+│   │   ├── blowfish.py          # Blowfish шифрование (ECB, 8-байтные блоки)
+│   │   ├── blowfish_engine.py   # Движок Blowfish (порт из L2JMobius)
+│   │   ├── login_crypt.py       # Шифрование для Login Server (Blowfish + XOR + checksum)
+│   │   ├── game_crypt.py        # Шифрование для Game Server (XOR)
+│   │   └── rsa.py               # RSA шифрование с авто-дескремблированием
 │   ├── models/                  # Модели данных
-│   │   ├── character.py         # CharacterInfo
-│   │   └── server.py            # GameServer
+│   │   ├── character.py         # CharacterInfo (frozen dataclass)
+│   │   └── server.py            # GameServer (frozen dataclass)
 │   ├── network/                 # Сетевой слой
 │   │   ├── login_connection.py  # Соединение с Login Server
 │   │   ├── game_connection.py   # Соединение с Game Server
-│   │   ├── login_flow.py        # Оркестрация авторизации
-│   │   └── game_flow.py         # Оркестрация входа в мир
-│   └── protocol/                # Протокол L2
-│       ├── base.py              # PacketReader/PacketWriter, базовые классы пакетов
-│       ├── login/               # Пакеты Login Server
-│       │   ├── client_packets.py
-│       │   └── server_packets.py
-│       └── game/                # Пакеты Game Server
-│           ├── client_packets.py
-│           └── server_packets.py
+│   │   ├── login_flow.py        # Оркестрация авторизации (LoginFlow, LoginResult, LoginError)
+│   │   └── game_flow.py         # Оркестрация входа в мир (GameFlow, GameSession, GameError)
+│   ├── protocol/                # Протокол L2
+│   │   ├── base.py              # PacketReader/PacketWriter, базовые классы пакетов
+│   │   ├── login/               # Пакеты Login Server
+│   │   │   ├── client_packets.py # AuthGameGuard, RequestAuthLogin, RequestServerList, RequestServerLogin
+│   │   │   └── server_packets.py # Init, GGAuth, LoginOk, LoginFail, PlayOk, ServerList
+│   │   └── game/                # Пакеты Game Server
+│   │       ├── client_packets.py # ProtocolVersion, AuthLogin, CharacterSelect, EnterWorld
+│   │       └── server_packets.py # KeyPacket, CharSelectionInfo, CharSelected, UserInfo
+│   └── debug/                   # Отладочные утилиты
+│       └── packet_inspector.py  # Анализ пакетов, hex dump, диагностика
 ├── tests/                       # Тесты
-│   ├── conftest.py              # Фикстуры pytest (mock-серверы)
+│   ├── conftest.py              # Фикстуры pytest (mock-серверы, credentials)
 │   ├── test_crypto/             # Тесты криптографии
-│   ├── test_protocol/           # Тесты протокола
-│   └── test_integration/        # Интеграционные тесты
-├── examples/                    # Примеры использования
-│   └── login_example.py
+│   ├── test_protocol/           # Тесты сериализации/десериализации пакетов
+│   └── test_integration/        # Интеграционные тесты с mock-серверами
+├── main.py                      # Точка входа (пример использования)
 ├── pyproject.toml               # Конфигурация проекта
 └── README.md                    # Документация для пользователей
 ```
@@ -99,10 +101,11 @@ ruff check . --fix
 ruff format .
 ```
 
-### Build
+### Running
 ```bash
-# Сборка wheel
-python -m build
+# Активация окружения и запуск
+.venv\Scripts\activate
+python main.py
 ```
 
 ## Code Style Guidelines
@@ -128,6 +131,15 @@ class MyClass:
     def __init__(self, field1, field2):
         self.field1 = field1
         self.field2 = field2
+```
+
+### Dataclasses
+Используются `frozen=True, slots=True` для неизменяемых конфигурационных объектов:
+```python
+@dataclass(frozen=True, slots=True)
+class LoginConfig:
+    host: str
+    port: int = 2106
 ```
 
 ### Imports
@@ -181,10 +193,11 @@ class ServerPacket(ABC):
 - `tests/test_integration/` — Интеграционные тесты с mock-серверами
 
 ### Fixtures (conftest.py)
-- `sample_credentials` — Тестовые учётные данные
+- `sample_credentials` — Тестовые учётные данные (testuser/testpass)
 - `sample_login_config` — Тестовая конфигурация
-- `mock_login_server` — Mock Login Server на случайном порту
-- `mock_game_server` — Mock Game Server на случайном порту
+- `login_crypt` — Настроенная криптография с тестовым ключом
+- `mock_login_server` — Mock Login Server на свободном порту (127.0.0.1)
+- `mock_game_server` — Mock Game Server на свободном порту (127.0.0.1)
 
 ### Writing Tests
 ```python
@@ -210,13 +223,13 @@ class TestMyFeature:
 
 ### Packet System
 Все пакеты наследуются от базовых классов:
-- `ClientPacket` — пакеты от клиента к серверу
-- `ServerPacket` — пакеты от сервера к клиенту
+- `ClientPacket` — пакеты от клиента к серверу (реализуют `_write()`)
+- `ServerPacket` — пакеты от сервера к клиенту (реализуют `_read()`)
 
 ### Flow Pattern
 Оркестрация сложных процессов через Flow-классы:
-- `LoginFlow` — авторизация на Login Server
-- `GameFlow` — вход в игровой мир
+- `LoginFlow` — авторизация на Login Server (LoginResult, LoginError)
+- `GameFlow` — вход в игровой мир (GameSession, GameError)
 
 ### Event System
 Типизированная система событий с поддержкой sync/async обработчиков:
@@ -234,22 +247,51 @@ async with LoginConnection(host, port, crypt) as conn:
     await conn.send_packet(packet)
 ```
 
+### Debug Utilities
+PacketInspector для диагностики проблем с пакетами:
+```python
+inspector = create_inspector(debug_packets=True)
+analysis = inspector.analyze_packet(raw_data, decrypted_data, expected_opcode, "login")
+inspector.log_packet_analysis(analysis, "context")
+```
+
 ## Security Considerations
 
 ### Криптография
-- `L2Blowfish` — блочное шифрование (8-байтные блоки)
-- `L2RSA` — асимметричное шифрование для авторизации
+- `L2Blowfish` — блочное шифрование (8-байтные блоки, ECB режим)
+- `L2RSA` — асимметричное шифрование для авторизации с авто-дескремблированием
 - `LoginCrypt` — Blowfish + XOR + checksum для Login Server
 - `GameCrypt` — XOR шифрование для Game Server
 
 ### Важные замечания
 - RSA-ключи могут требовать дескремблирования (`unscramble_modulus`)
 - Статические ключи определены в соответствующих модулях криптографии
-- Первый пакет (Init) шифруется иначе, чем последующие
+- Первый пакет (Init) шифруется иначе, чем последующие (через `decrypt_init`)
+- Реализован авто-детект статического Blowfish-ключа при несоответствии опкода
+
+## Login Flow Sequence
+
+```
+1. Подключение к Login Server (порт 2106)
+2. Получение Init (session_id, rsa_key, blowfish_key)
+3. Отправка AuthGameGuard
+4. Получение GGAuth
+5. Отправка RequestAuthLogin (RSA-шифрование)
+6. Получение LoginOk (login_ok1, login_ok2)
+7. Отправка RequestServerList
+8. Получение ServerList
+9. Отправка RequestServerLogin
+10. Получение PlayOk (play_ok1, play_ok2)
+11. Переподключение к Game Server
+12. ProtocolVersion → KeyPacket → AuthLogin
+13. CharSelectionInfo → CharacterSelect → CharSelected
+14. EnterWorld → UserInfo (в игре!)
+```
 
 ## Development Status
 
 - ✅ **Login flow** — полностью реализован
+- ✅ **Game flow** — полностью реализован (вход в мир с персонажем)
 - 🚧 **Game actions** — в разработке (move, attack, skills)
 
 ## Common Tasks
@@ -257,16 +299,17 @@ async with LoginConnection(host, port, crypt) as conn:
 ### Добавление нового пакета
 1. Определи опкод пакета
 2. Создай класс в `protocol/login/` или `protocol/game/`
-3. Унаследуй от `ClientPacket` или `ServerPacket`
+3. Унаследуй от `ClientPacket` (для исходящих) или `ServerPacket` (для входящих)
 4. Реализуй `_write()` или `_read()` метод
-5. Добавь тесты
+5. Добавь в `__all__` модуля
+6. Добавь тесты
 
 ### Добавление нового события
 1. Создай dataclass в `events.py`
 2. Добавь в `__all__` и публичный API в `__init__.py`
 
 ### Работа с тестами
-- Mock-серверы запускаются на `192.168.0.33` со случайным портом
+- Mock-серверы запускаются на `127.0.0.1` со случайным портом
 - Используй `asyncio.wait_for()` для таймаутов в тестах
 - Криптография в тестах использует тестовые ключи
 
