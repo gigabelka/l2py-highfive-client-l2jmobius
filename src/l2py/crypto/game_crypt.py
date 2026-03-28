@@ -6,12 +6,12 @@
   - dynamic_part (8 байт) — приходит от сервера
   - static_part (8 байт) — зашит в клиент
 
-После каждой операции последние 4 байта dynamic_part
+После каждой операции первые 4 байта static_part (байты 8-11)
 инкрементируются на количество обработанных байт.
 """
 
 # Статическая часть ключа для High Five / L2JMobius
-STATIC_KEY = bytes([0xA1, 0x6C, 0x54, 0x87, 0x09, 0xF1, 0x1C, 0x8D])
+STATIC_KEY = bytes([0xC8, 0x27, 0x93, 0x01, 0xA1, 0x6C, 0x31, 0x97])
 
 
 class GameCrypt:
@@ -57,16 +57,16 @@ class GameCrypt:
     def _update_key(self, key: bytearray, length: int) -> None:
         """Обновляет ключ после операции.
 
-        Инкрементирует последние 4 байта (позиции 12-15) на length.
+        Инкрементирует счётчик байт (позиции 8-11) на length.
 
         Args:
             key: Ключ для обновления.
             length: Количество обработанных байт.
         """
-        # Последние 4 байта — little-endian счётчик
-        current = int.from_bytes(key[12:16], "little")
+        # Счётчик байт — little-endian
+        current = int.from_bytes(key[8:12], "little")
         new_value = (current + length) & 0xFFFFFFFF
-        key[12:16] = new_value.to_bytes(4, "little")
+        key[8:12] = new_value.to_bytes(4, "little")
 
     def decrypt(self, data: bytes) -> bytes:
         """Дешифрует данные XOR.
@@ -89,10 +89,11 @@ class GameCrypt:
         key_len = len(key)
         result = bytearray(data)
 
+        temp = 0
         for i in range(len(result)):
-            temp = result[i]
-            result[i] ^= key[i % key_len]
-            key[i % key_len] = temp
+            temp2 = result[i]
+            result[i] = (temp2 ^ key[i % key_len] ^ temp) & 0xFF
+            temp = temp2
 
         self._update_key(key, len(result))
         return bytes(result)
@@ -117,9 +118,11 @@ class GameCrypt:
         key_len = len(key)
         result = bytearray(data)
 
+        temp = 0
         for i in range(len(result)):
-            result[i] ^= key[i % key_len]
-            key[i % key_len] = result[i]
+            temp2 = result[i]
+            temp = (temp2 ^ key[i % key_len] ^ temp) & 0xFF
+            result[i] = temp
 
         self._update_key(key, len(result))
         return bytes(result)

@@ -81,17 +81,17 @@ class TestGameCrypt:
         assert crypt._encrypt_key != key_before
 
     def test_key_increments_after_bytes(self):
-        """Тест что последние 4 байта ключа инкрементируются."""
+        """Тест что байты 8-11 ключа инкрементируются."""
         crypt = GameCrypt()
         crypt.set_key(b"\x00" * 8)
 
-        # Начальное значение последних 4 байт
-        initial_counter = int.from_bytes(crypt._encrypt_key[12:16], "little")
+        # Начальное значение байт 8-11
+        initial_counter = int.from_bytes(crypt._encrypt_key[8:12], "little")
 
         crypt.encrypt(b"abcd")  # 4 байта
 
         # Счётчик должен увеличиться на 4
-        new_counter = int.from_bytes(crypt._encrypt_key[12:16], "little")
+        new_counter = int.from_bytes(crypt._encrypt_key[8:12], "little")
         assert new_counter == initial_counter + 4
 
     def test_encrypt_decrypt_keys_independent(self):
@@ -168,5 +168,5 @@ class TestStaticKey:
 
     def test_static_key_values(self):
         """Тест значений статического ключа."""
-        expected = bytes([0xA1, 0x6C, 0x54, 0x87, 0x09, 0xF1, 0x1C, 0x8D])
+        expected = bytes([0xC8, 0x27, 0x93, 0x01, 0xA1, 0x6C, 0x31, 0x97])
         assert STATIC_KEY == expected

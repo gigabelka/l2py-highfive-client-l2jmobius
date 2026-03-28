@@ -25,7 +25,7 @@ class ProtocolVersionPacket(ClientPacket):
     __slots__ = ("protocol_version",)
 
     # Версия протокола для High Five
-    HIGH_FIVE_PROTOCOL = 267  # 0x10B
+    HIGH_FIVE_PROTOCOL = 273  # 0x111 (L2JMobius CT 2.6)
 
     def __init__(self, protocol_version: int = HIGH_FIVE_PROTOCOL) -> None:
         """Инициализация пакета.
@@ -78,8 +78,18 @@ class AuthLoginPacket(ClientPacket):
         super().__init__()
 
     def _write(self) -> None:
-        """Записывает поля пакета."""
-        self._writer.write_string(self.login)
+        """Записывает поля пакета.
+        
+        Важно: логин в AuthLogin кодируется как UTF-8 с одинарным null-terminator,
+        а не UTF-16LE как в других пакетах!
+        """
+        # UTF-8 encoding with single null terminator for AuthLogin
+        self._writer.write_bytes(self.login.encode('utf-8'))
+        self._writer.write_byte(0)  # null terminator
+        # Дополняем до 14 байт (макс длина логина в L2) + 2 байта null = 16 байт
+        current_len = len(self.login) + 1
+        for _ in range(16 - current_len):
+            self._writer.write_byte(0)
         self._writer.write_uint32(self.play_ok2)
         self._writer.write_uint32(self.play_ok1)
         self._writer.write_uint32(self.login_ok1)
