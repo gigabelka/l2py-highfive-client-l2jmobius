@@ -4,7 +4,7 @@
 Точная копия алгоритма из L2JMobius Encryption.java
 """
 
-# Статическая часть ключа для High Five / L2JMobius
+# Статическая часть ключа для High Five / L2JMobius (последние 8 байт)
 STATIC_KEY = bytes([0xC8, 0x27, 0x93, 0x01, 0xA1, 0x6C, 0x31, 0x97])
 
 
@@ -17,14 +17,13 @@ class GameCrypt:
     - Ключ обновляется после каждой операции
     """
 
-    __slots__ = ("_in_key", "_out_key", "_enabled", "_first_encrypt")
+    __slots__ = ("_in_key", "_out_key", "_enabled")
 
     def __init__(self) -> None:
         """Инициализация криптографии (disabled по умолчанию)."""
         self._in_key: bytearray | None = None
         self._out_key: bytearray | None = None
         self._enabled = False
-        self._first_encrypt = True
 
     @property
     def enabled(self) -> bool:
@@ -35,17 +34,20 @@ class GameCrypt:
         """Устанавливает XOR-ключ.
 
         Args:
-            dynamic_key: 8 байт динамической части от сервера.
+            dynamic_key: 8 байт динамической части ключа от сервера.
+                         Полный 16-байтный ключ собирается как:
+                         [dynamic_key (8 bytes)] + [STATIC_KEY (8 bytes)]
         """
         if len(dynamic_key) != 8:
             raise ValueError(f"Dynamic key must be 8 bytes, got {len(dynamic_key)}")
 
+        # Собираем полный 16-байтный ключ как в BlowFishKeygen.java
         full_key = bytearray(dynamic_key + STATIC_KEY)
         # Копируем ключ для decrypt (in) и encrypt (out)
         self._in_key = bytearray(full_key)
         self._out_key = bytearray(full_key)
-        self._enabled = True
-        self._first_encrypt = True
+        # ВАЖНО: шифрование НЕ включается здесь!
+        # Оно включается при первом вызове encrypt() как в L2JMobius
 
     def decrypt(self, data: bytes) -> bytes:
         """Дешифрует данные (точно как в Encryption.decrypt).
@@ -90,12 +92,14 @@ class GameCrypt:
         Returns:
             Зашифрованные данные.
         """
-        if not self._enabled or self._out_key is None:
+        # Если ключ не установлен - отправляем без шифрования
+        if self._out_key is None:
             return data
 
-        # Первый пакет не шифруется
-        if self._first_encrypt:
-            self._first_encrypt = False
+        # Первый вызов encrypt() включает шифрование но НЕ шифрует пакет
+        # (как в L2JMobius Encryption.java)
+        if not self._enabled:
+            self._enabled = True
             return data
 
         result = bytearray(data)

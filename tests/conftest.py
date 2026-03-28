@@ -23,7 +23,7 @@ def sample_credentials() -> Credentials:
 @pytest.fixture
 def sample_login_config() -> LoginConfig:
     """Фикстура с тестовой конфигурацией."""
-    return LoginConfig(host="127.0.0.1", port=2106)
+    return LoginConfig(host="192.168.0.33", port=2106)
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ async def mock_login_server() -> AsyncGenerator[tuple[str, int], None]:
             await writer.wait_closed()
 
     # Запускаем сервер на случайном порту
-    server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
+    server = await asyncio.start_server(handle_client, "192.168.0.33", 0)
     addr = server.sockets[0].getsockname()
 
     yield addr[0], addr[1]
@@ -171,7 +171,7 @@ async def mock_game_server() -> AsyncGenerator[tuple[str, int], None]:
             writer.close()
             await writer.wait_closed()
 
-    server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
+    server = await asyncio.start_server(handle_client, "192.168.0.33", 0)
     addr = server.sockets[0].getsockname()
 
     yield addr[0], addr[1]

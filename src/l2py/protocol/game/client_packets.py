@@ -80,16 +80,11 @@ class AuthLoginPacket(ClientPacket):
     def _write(self) -> None:
         """Записывает поля пакета.
         
-        Важно: логин в AuthLogin кодируется как UTF-8 с одинарным null-terminator,
-        а не UTF-16LE как в других пакетах!
+        Логин кодируется как UTF-16LE с двойным null-terminator (как стандартная строка L2).
+        Сервер использует readString() который читает UTF-16LE до \x00\x00.
         """
-        # UTF-8 encoding with single null terminator for AuthLogin
-        self._writer.write_bytes(self.login.encode('utf-8'))
-        self._writer.write_byte(0)  # null terminator
-        # Дополняем до 14 байт (макс длина логина в L2) + 2 байта null = 16 байт
-        current_len = len(self.login) + 1
-        for _ in range(16 - current_len):
-            self._writer.write_byte(0)
+        # UTF-16LE encoding с завершающим \x00\x00 (только стандартный null-terminator)
+        self._writer.write_string(self.login)
         self._writer.write_uint32(self.play_ok2)
         self._writer.write_uint32(self.play_ok1)
         self._writer.write_uint32(self.login_ok1)

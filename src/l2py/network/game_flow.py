@@ -118,23 +118,28 @@ class GameFlow:
             logger.debug("Waiting for KeyPacket...")
             key_packet = await self._wait_for_packet(conn, KeyPacket)
             logger.debug(f"Received KeyPacket: enabled={key_packet.enabled}")
+            if key_packet.enabled:
+                logger.debug(f"KeyPacket xor_key: {key_packet.xor_key.hex()}")
 
             # Включаем шифрование
             if key_packet.enabled:
                 crypt.set_key(key_packet.xor_key)
-                logger.debug("Encryption enabled")
+                logger.debug(f"Encryption enabled, full key: {crypt._in_key.hex()}")
 
             # Шаг 3: Отправляем AuthLogin
             logger.debug("Sending AuthLogin...")
-            await conn.send_packet(
-                AuthLoginPacket(
-                    login=self._login_result.username,
-                    play_ok1=self._login_result.play_ok1,
-                    play_ok2=self._login_result.play_ok2,
-                    login_ok1=self._login_result.login_ok1,
-                    login_ok2=self._login_result.login_ok2,
-                )
+            auth_packet = AuthLoginPacket(
+                login=self._login_result.username,
+                play_ok1=self._login_result.play_ok1,
+                play_ok2=self._login_result.play_ok2,
+                login_ok1=self._login_result.login_ok1,
+                login_ok2=self._login_result.login_ok2,
             )
+            auth_bytes = auth_packet.to_bytes()
+            logger.debug(f"AuthLogin raw bytes: {auth_bytes.hex()}")
+            logger.debug(f"Key before send: {crypt._out_key.hex()}")
+            await conn.send_packet(auth_packet)
+            logger.debug(f"Key after send: {crypt._out_key.hex()}")
 
             # Шаг 4: Получаем список персонажей
             logger.debug("Waiting for CharSelectionInfo...")
@@ -165,10 +170,18 @@ class GameFlow:
             # Шаг 5: Отправляем CharacterSelect
             logger.debug(f"Sending CharacterSelect (slot {self._char_slot})...")
             await conn.send_packet(CharacterSelectPacket(self._char_slot))
+            
+            # DEBUG: Проверим, не закрылся ли сокет
+            logger.debug(f"CharacterSelect sent, waiting for response...")
 
             # Шаг 6: Получаем подтверждение
             logger.debug("Waiting for CharSelected...")
-            char_selected = await self._wait_for_packet(conn, CharSelectedPacket)
+            # DEBUG: Прочитаем любой пакет и посмотрим что приходит
+            opcode, data = await conn.read_packet()
+            logger.debug(f"DEBUG: Received opcode=0x{opcode:02X}, data={data.hex()[:50]}...")
+            if opcode != CharSelectedPacket.opcode:
+                raise GameError(f"Expected CharSelected (0x{CharSelectedPacket.opcode:02X}), got 0x{opcode:02X}")
+            char_selected = CharSelectedPacket(data)
             logger.debug(f"CharSelected: {char_selected.name}")
 
             # Шаг 7: Отправляем EnterWorld
@@ -214,6 +227,7 @@ class GameFlow:
             GameError: Если получен другой пакет.
         """
         opcode, data = await conn.read_packet()
+        logger.debug(f"Received raw packet: opcode=0x{opcode:02X}, data={data.hex()}")
 
         if opcode != packet_class.opcode:
             raise GameError(

@@ -102,7 +102,15 @@ class GameConnection:
             )
 
             # Дешифруем если включено
-            decrypted = self._crypt.decrypt(body)
+            # НО: проверяем, не пришёл ли пакет без шифрования
+            # (некоторые серверы отправляют первый пакет без шифрования)
+            # Ожидаемые опкоды: 0x09 (CharSelectionInfo), 0x0B (CharSelected), etc.
+            EXPECTED_OPCODES = {0x09, 0x0A, 0x0B, 0x0C, 0x32}
+            if body[0] in EXPECTED_OPCODES:
+                # Пакет не зашифрован
+                decrypted = body
+            else:
+                decrypted = self._crypt.decrypt(body)
 
             # Первый байт = opcode
             opcode = decrypted[0]

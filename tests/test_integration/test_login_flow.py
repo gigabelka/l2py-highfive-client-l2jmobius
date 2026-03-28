@@ -33,7 +33,7 @@ from l2py.protocol.login.server_packets import (
 class MockLoginServer:
     """Мок Login Server для тестирования."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 0):
+    def __init__(self, host: str = "192.168.0.33", port: int = 0):
         self.host = host
         self.port = port
         self.server = None
@@ -143,7 +143,7 @@ class MockLoginServer:
     async def _send_server_list(self, writer):
         """Отправляет ServerList пакет."""
         # Opcode 0x04, Count 1, LastServer 1
-        # Server: ID 1, IP 127.0.0.1, Port 7777, AgeLimit 0, PVP 0, Online 0, MaxOnline 1000, Status 1
+        # Server: ID 1, IP 192.168.0.33, Port 7777, AgeLimit 0, PVP 0, Online 0, MaxOnline 1000, Status 1
         response = bytes([0x04, 0x01, 0x01]) + bytes([
             0x01, # ID
             127, 0, 0, 1, # IP
@@ -202,7 +202,7 @@ async def test_full_login_flow(mock_login_server):
 
     assert isinstance(result, LoginResult)
     assert result.server.id == 2
-    assert result.server.ip == "127.0.0.1"
+    assert result.server.ip == "192.168.0.33"
     assert result.server.port == 30000
     assert result.play_ok1 == 0xAAAAAAAA
     assert result.play_ok2 == 0xBBBBBBBB
@@ -305,7 +305,7 @@ async def test_login_fail():
             writer.close()
             await writer.wait_closed()
 
-    server = await asyncio.start_server(handle_fail, "127.0.0.1", 0)
+    server = await asyncio.start_server(handle_fail, "192.168.0.33", 0)
     addr = server.sockets[0].getsockname()
 
     try:
