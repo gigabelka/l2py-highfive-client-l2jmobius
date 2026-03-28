@@ -24,7 +24,7 @@ async def main() -> int:
             password="qwerty",
             host="192.168.0.33",
             port=2106,
-            server_id=1,
+            2,
             char_slot=0,
         )
         print("[OK] Successfully entered the game!")
