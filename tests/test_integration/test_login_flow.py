@@ -169,7 +169,7 @@ async def test_full_login_flow(mock_login_server):
     config = LoginConfig(
         host=mock_login_server.host,
         port=mock_login_server.port,
-        server_id=1,
+        server_id=2,
     )
     credentials = Credentials(username="testuser", password="testpass")
 

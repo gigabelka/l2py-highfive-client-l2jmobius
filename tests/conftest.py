@@ -23,7 +23,7 @@ def sample_credentials() -> Credentials:
 @pytest.fixture
 def sample_login_config() -> LoginConfig:
     """Фикстура с тестовой конфигурацией."""
-    return LoginConfig(host="192.168.0.33", port=2106, server_id=1)
+    return LoginConfig(host="192.168.0.33", port=2106, server_id=2)
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ async def mock_login_server() -> AsyncGenerator[tuple[str, int], None]:
                     elif opcode == 0x05:  # RequestServerList
                         # Отправляем ServerList (0x04)
                         response = bytes([0x04, 0x01, 0x00])  # count=1, last_server=0
-                        response += bytes([0x01])  # server_id=1
+                        response += bytes([0x01])  # server_id=2
                         response += bytes([127, 0, 0, 1])  # ip
                         response += (30000).to_bytes(4, "little")  # port
                         response += bytes([0, 0])  # age_limit, pvp

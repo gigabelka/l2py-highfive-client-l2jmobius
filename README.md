@@ -41,7 +41,7 @@ async def main():
         password="qwerty",
         host="192.168.0.33",
         port=2106,
-        server_id=1,
+        server_id=2,
         char_slot=0,
     )
     print(f"Вошёл в игру: {session.character.name}")
@@ -90,5 +90,4 @@ MIT License — см. файл [LICENSE](LICENSE) для подробносте�
 
 ## Благодарности
 
-- Проект основан на архитектуре [l2js-client](https://github.com/npetrovski/l2js-client)
 - Совместим с [L2JMobius](https://github.com/L2JMobius/L2J_Mobius)

@@ -154,7 +154,7 @@ class TestClientPackets:
         packet = RequestServerLoginPacket(
             login_ok1=0x11111111,
             login_ok2=0x22222222,
-            server_id=1,
+            server_id=2,
         )
         data = packet.to_bytes()
 

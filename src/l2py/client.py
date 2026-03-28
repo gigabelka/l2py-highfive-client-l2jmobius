@@ -22,7 +22,7 @@ class L2Client:
             username="qwerty",
             password="qwerty",
             host="192.168.0.33",
-            server_id=1,
+            server_id=2,
         )
     """
 

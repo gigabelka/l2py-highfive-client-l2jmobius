@@ -28,7 +28,7 @@ async def main():
             password="qwerty",
             host="192.168.0.33",
             port=2106,
-            server_id=1,
+            server_id=2,
             char_slot=0,
         )
 
