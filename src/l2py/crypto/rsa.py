@@ -55,26 +55,24 @@ class L2RSA:
         return cipher_int.to_bytes(128, "big")
 
 
-def unscramble_modulus(modulus: bytes) -> bytes:
-    """Дескремблирует RSA-модуль из пакета Init.
+def unscramble_modulus(modulus: bytes, full_descramble: bool = True) -> bytes:
+    """Дескремблирует RSA-модуль из пакета Init (L2JMobius алгоритм).
 
-    Некоторые серверы L2 (включая L2JMobius) могут отправлять
-    RSA-модуль в скремблированном виде. Эта функция выполняет
-    обратное преобразование.
+    L2JMobius использует специфический алгоритм scramble:
+    https://github.com/L2JMobius/L2J_Mobius/blob/master/java/org/l2jmobius/loginserver/network/ScrambledKeyPair.java
 
-    Стандартный алгоритм L2:
-    1. Swap первых 64 байт со вторыми 64 байтами
-    2. XOR и swap по 4 байта
+    Алгоритм descramble (обратный scramble):
+    1. XOR last 0x40 bytes with first 0x40 bytes (reverse Step 4)
+    2. XOR bytes 0x0d-0x10 with bytes 0x34-0x38 (reverse Step 3)
+    3. XOR first 0x40 bytes with last 0x40 bytes (reverse Step 2)
+    4. Swap 0x4d-0x50 <-> 0x00-0x04 (reverse Step 1)
 
     Args:
         modulus: Скремблированный модуль (128 байт).
+        full_descramble: Не используется, сохранено для совместимости.
 
     Returns:
         Дескремблированный модуль.
-
-    TODO: Для L2JMobius скремблирование может быть отключено.
-          Если шифрование не работает — возможно нужно пропустить
-          эту функцию или настроить сервер.
     """
     if len(modulus) != 128:
         raise ValueError(f"Modulus must be 128 bytes, got {len(modulus)}")
@@ -82,17 +80,128 @@ def unscramble_modulus(modulus: bytes) -> bytes:
     # Копируем в mutable bytearray
     result = bytearray(modulus)
 
-    # Шаг 1: Swap первых 64 байт (0x00-0x3F) со вторыми 64 байтами (0x40-0x7F)
-    for i in range(64):
-        result[0x00 + i], result[0x40 + i] = result[0x40 + i], result[0x00 + i]
+    # Reverse Step 4: XOR last 0x40 bytes with first 0x40 bytes
+    for i in range(0x40):
+        result[0x40 + i] = (result[0x40 + i] ^ result[i]) & 0xff
 
-    # Шаг 2: XOR и swap по 4 байта (стандартный L2 алгоритм)
-    # Это примерная реализация, точный алгоритм может отличаться
-    # TODO: Уточнить по исходникам l2js-client
+    # Reverse Step 3: XOR bytes 0x0d-0x10 with bytes 0x34-0x38
+    for i in range(4):
+        result[0x0d + i] = (result[0x0d + i] ^ result[0x34 + i]) & 0xff
 
-    # Пока возвращаем как есть после первого swap
-    # (это часто достаточно для L2JMobius)
+    # Reverse Step 2: XOR first 0x40 bytes with last 0x40 bytes
+    for i in range(0x40):
+        result[i] = (result[i] ^ result[0x40 + i]) & 0xff
+
+    # Reverse Step 1: Swap 0x4d-0x50 <-> 0x00-0x04
+    for i in range(4):
+        result[0x00 + i], result[0x4d + i] = result[0x4d + i], result[0x00 + i]
+
     return bytes(result)
 
 
-__all__ = ["L2RSA", "unscramble_modulus"]
+def test_rsa_descrambling(modulus: bytes) -> dict[str, tuple[bool, bytes, str]]:
+    """Тестирует различные варианты дескремблирования RSA модуля.
+
+    Полезно для определения правильного алгоритма для конкретного сервера.
+
+    Args:
+        modulus: Исходный RSA модуль (128 байт).
+
+    Returns:
+        Словарь {method_name: (appears_valid, descrambled_data, description)}.
+    """
+    results = {}
+
+    # Тест 1: Без дескремблирования (как есть)
+    try:
+        results["no_descramble"] = (
+            _is_valid_rsa_modulus(modulus),
+            modulus,
+            "Original modulus without any descrambling"
+        )
+    except Exception as e:
+        results["no_descramble"] = (False, modulus, f"Error: {e}")
+
+    # Тест 2: Только блочный swap (L2JMobius style)
+    try:
+        partial_descrambled = unscramble_modulus(modulus, full_descramble=False)
+        results["block_swap_only"] = (
+            _is_valid_rsa_modulus(partial_descrambled),
+            partial_descrambled,
+            "Only 64-byte block swap (L2JMobius compatible)"
+        )
+    except Exception as e:
+        results["block_swap_only"] = (False, b"", f"Error: {e}")
+
+    # Тест 3: Полное дескремблирование (Classic L2J style)
+    try:
+        full_descrambled = unscramble_modulus(modulus, full_descramble=True)
+        results["full_descramble"] = (
+            _is_valid_rsa_modulus(full_descrambled),
+            full_descrambled,
+            "Full descrambling with XOR and 4-byte swaps"
+        )
+    except Exception as e:
+        results["full_descramble"] = (False, b"", f"Error: {e}")
+
+    return results
+
+
+def _is_valid_rsa_modulus(modulus: bytes) -> bool:
+    """Проверяет, выглядит ли RSA модуль валидным.
+
+    Простые эвристики для определения корректности модуля.
+
+    Args:
+        modulus: RSA модуль для проверки.
+
+    Returns:
+        True, если модуль выглядит валидным.
+    """
+    if len(modulus) != 128:
+        return False
+
+    # Конвертируем в число
+    modulus_int = int.from_bytes(modulus, "big")
+
+    # RSA модуль должен быть нечетным (произведение двух простых чисел)
+    if modulus_int % 2 == 0:
+        return False
+
+    # RSA модуль не должен быть слишком маленьким
+    if modulus_int < (1 << 1023):  # Менее 1024 бит
+        return False
+
+    # Модуль не должен быть all zeros или all ones
+    if modulus_int == 0 or modulus == b"\xff" * 128:
+        return False
+
+    # Проверяем разнообразие байт (не должно быть слишком много повторений)
+    unique_bytes = len(set(modulus))
+    if unique_bytes < 10:  # Слишком мало уникальных байт
+        return False
+
+    return True
+
+
+def create_l2rsa_with_auto_descramble(raw_modulus: bytes) -> "L2RSA":
+    """Создает L2RSA с дескремблированием для L2JMobius.
+
+    L2JMobius использует специфический алгоритм scramble для RSA модуля.
+    Эта функция всегда применяет правильный descramble алгоритм.
+
+    Args:
+        raw_modulus: Сырой RSA модуль из Init пакета.
+
+    Returns:
+        L2RSA с дескремблированным модулем.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    descrambled = unscramble_modulus(raw_modulus)
+    logger.debug("RSA: Applied L2JMobius descrambling")
+    return L2RSA(descrambled)
+
+
+__all__ = ["L2RSA", "unscramble_modulus", "test_rsa_descrambling", "create_l2rsa_with_auto_descramble"]

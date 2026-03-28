@@ -21,4 +21,7 @@ npm-debug.log*
 .claude
 .vscode
 .legacy-backup/
+
+# virtual environment
 .venv
+.pytest_cache

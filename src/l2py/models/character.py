@@ -25,6 +25,15 @@ class CharacterInfo:
         exp: Опыт.
         session_id: Сессионный ID.
         clan_id: ID клана.
+        object_id: Object ID персонажа.
+        karma: Карма.
+        pk_kills: Количество PK убийств.
+        pvp_kills: Количество PvP убийств.
+        hair_style: Стиль волос.
+        hair_color: Цвет волос.
+        face: Лицо.
+        vitality: Очки витальности.
+        active: Активен ли персонаж.
     """
 
     name: str
@@ -43,6 +52,15 @@ class CharacterInfo:
     exp: int = 0
     session_id: int = 0
     clan_id: int = 0
+    object_id: int = 0
+    karma: int = 0
+    pk_kills: int = 0
+    pvp_kills: int = 0
+    hair_style: int = 0
+    hair_color: int = 0
+    face: int = 0
+    vitality: int = 0
+    active: bool = False
 
 
 __all__ = ["CharacterInfo"]

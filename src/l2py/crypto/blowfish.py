@@ -2,11 +2,10 @@
 """Blowfish шифрование для Login Server.
 
 Реализация ECB режима с блоками по 8 байт.
-Используется pycryptodome для базовой функциональности.
+Используется BlowfishEngine, совместимый с L2JMobius.
 """
 
-from Crypto.Cipher import Blowfish
-from Crypto.Cipher._mode_ecb import EcbMode
+from l2py.crypto.blowfish_engine import BlowfishEngine
 
 
 class L2Blowfish:
@@ -14,9 +13,12 @@ class L2Blowfish:
 
     Lineage 2 использует Blowfish для шифрования пакетов на Login Server.
     Блоки фиксированного размера (8 байт), данные дополняются нулями.
+    
+    Использует BlowfishEngine, портированный из L2JMobius,
+    для полной совместимости с сервером.
     """
 
-    __slots__ = ("_cipher",)
+    __slots__ = ("_engine",)
 
     BLOCK_SIZE = 8
 
@@ -26,7 +28,8 @@ class L2Blowfish:
         Args:
             key: Ключ шифрования (макс. 56 байт для Blowfish).
         """
-        self._cipher: EcbMode = Blowfish.new(key, Blowfish.MODE_ECB)
+        self._engine = BlowfishEngine()
+        self._engine.init(key)
 
     def _pad(self, data: bytes) -> bytes:
         """Дополняет данные до кратности 8 байт.
@@ -52,7 +55,7 @@ class L2Blowfish:
             Зашифрованные данные.
         """
         padded = self._pad(data)
-        return self._cipher.encrypt(padded)
+        return self._engine.encrypt(padded)
 
     def decrypt(self, data: bytes) -> bytes:
         """Дешифрует данные Blowfish ECB.
@@ -63,7 +66,7 @@ class L2Blowfish:
         Returns:
             Дешифрованные данные.
         """
-        return self._cipher.decrypt(data)
+        return self._engine.decrypt(data)
 
 
 __all__ = ["L2Blowfish"]

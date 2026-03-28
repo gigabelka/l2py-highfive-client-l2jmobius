@@ -40,6 +40,7 @@ class L2Client:
         port: int = 2106,
         server_id: int = 2,
         char_slot: int = 0,
+        debug: bool = False,
     ) -> GameSession:
         """Выполняет полный login flow: авторизация → выбор сервера → вход в мир.
 
@@ -50,6 +51,7 @@ class L2Client:
             port: Порт Login Server (по умолчанию 2106).
             server_id: ID игрового сервера (по умолчанию 1).
             char_slot: Индекс слота персонажа (по умолчанию 0).
+            debug: Включить детальный лог пакетов.
 
         Returns:
             Игровая сессия с активным соединением.
@@ -61,7 +63,7 @@ class L2Client:
         """
         logger.info(
             f"Starting login: user={username}, host={host}:{port}, "
-            f"server_id={server_id}, char_slot={char_slot}"
+            f"server_id={server_id}, char_slot={char_slot}, debug={debug}"
         )
 
         # Создаём конфигурации
@@ -70,11 +72,13 @@ class L2Client:
 
         # Фаза 1: Авторизация на Login Server
         logger.debug("Phase 1: Login Server authentication")
-        login_result = await LoginFlow(login_config, credentials, server_id).execute()
+        login_result = await LoginFlow(
+            login_config, credentials, server_id, debug_packets=debug
+        ).execute()
 
         # Фаза 2: Вход в игровой мир
         logger.debug("Phase 2: Game Server connection")
-        session = await GameFlow(login_result, char_slot).execute()
+        session = await GameFlow(login_result, char_slot, debug_packets=debug).execute()
 
         logger.info(f"Successfully logged in as {session.character.name}")
         return session

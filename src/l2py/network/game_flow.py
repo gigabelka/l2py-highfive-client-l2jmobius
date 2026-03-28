@@ -5,6 +5,7 @@
 до получения UserInfo (персонаж в игре).
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -37,7 +38,7 @@ class GameError(Exception):
         Args:
             message: Сообщение об ошибке.
         """
-        super().__init__(f"Game flow failed: {message}")
+        super().__init__(message)
 
 
 @dataclass
@@ -67,17 +68,19 @@ class GameFlow:
     9. Получение UserInfo (персонаж в игре)
     """
 
-    __slots__ = ("_login_result", "_char_slot")
+    __slots__ = ("_login_result", "_char_slot", "_debug_packets")
 
-    def __init__(self, login_result: LoginResult, char_slot: int = 0) -> None:
+    def __init__(self, login_result: LoginResult, char_slot: int = 0, debug_packets: bool = False) -> None:
         """Инициализация flow.
 
         Args:
             login_result: Результат авторизации на Login Server.
             char_slot: Индекс слота персонажа (0-6).
+            debug_packets: Включить отладку пакетов.
         """
         self._login_result = login_result
         self._char_slot = char_slot
+        self._debug_packets = debug_packets
 
     async def execute(self) -> GameSession:
         """Выполняет полный процесс входа в мир.
@@ -135,8 +138,14 @@ class GameFlow:
 
             # Шаг 4: Получаем список персонажей
             logger.debug("Waiting for CharSelectionInfo...")
-            char_info = await self._wait_for_packet(conn, CharSelectionInfoPacket)
-            logger.debug(f"Received {len(char_info.characters)} characters")
+            try:
+                char_info = await self._wait_for_packet(conn, CharSelectionInfoPacket)
+                logger.debug(f"Received {len(char_info.characters)} characters")
+            except asyncio.TimeoutError:
+                raise GameError(
+                    "Game Server did not respond. "
+                    "Check Game <-> Login Server connection configuration."
+                )
 
             # Выбираем персонажа
             if not char_info.characters:

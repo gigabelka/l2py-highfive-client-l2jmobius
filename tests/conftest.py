@@ -23,7 +23,7 @@ def sample_credentials() -> Credentials:
 @pytest.fixture
 def sample_login_config() -> LoginConfig:
     """Фикстура с тестовой конфигурацией."""
-    return LoginConfig(host="192.168.0.33", port=2106, server_id=2)
+    return LoginConfig(host="127.0.0.1", port=2106)
 
 
 @pytest.fixture
@@ -49,13 +49,17 @@ async def mock_login_server() -> AsyncGenerator[tuple[str, int], None]:
     async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Обработчик клиентских соединений."""
         try:
-            # Отправляем Init пакет
+            # Данные Init: opcode (0x00) + fields
+            # Данные Init: opcode (0x00) + fields (168) + padding (7) + XOR (8) = 184 bytes
             init_data = (
-                b"\x01\x00\x00\x00"  # session_id = 1
-                b"\x0B\x01\x00\x00"  # protocol_version = 267
+                bytes([0x00])  # Init opcode
+                + b"\x01\x00\x00\x00"  # session_id = 1
+                + b"\x0B\x01\x00\x00"  # protocol_version = 267
                 + b"\x00" * 128  # rsa_key
                 + b"\x00" * 16  # gg data
                 + b"session_key_16by"  # blowfish_key
+                + b"\x00" * 7  # padding to align
+                + b"\x00" * 8  # XOR tail
             )
 
             # Шифруем Init пакет
@@ -101,7 +105,7 @@ async def mock_login_server() -> AsyncGenerator[tuple[str, int], None]:
                     elif opcode == 0x05:  # RequestServerList
                         # Отправляем ServerList (0x04)
                         response = bytes([0x04, 0x01, 0x00])  # count=1, last_server=0
-                        response += bytes([0x01])  # server_id=2
+                        response += bytes([0x01])  # 
                         response += bytes([127, 0, 0, 1])  # ip
                         response += (30000).to_bytes(4, "little")  # port
                         response += bytes([0, 0])  # age_limit, pvp
@@ -130,7 +134,7 @@ async def mock_login_server() -> AsyncGenerator[tuple[str, int], None]:
             await writer.wait_closed()
 
     # Запускаем сервер на случайном порту
-    server = await asyncio.start_server(handle_client, "192.168.0.33", 0)
+    server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
 
     yield addr[0], addr[1]
@@ -167,7 +171,7 @@ async def mock_game_server() -> AsyncGenerator[tuple[str, int], None]:
             writer.close()
             await writer.wait_closed()
 
-    server = await asyncio.start_server(handle_client, "192.168.0.33", 0)
+    server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
 
     yield addr[0], addr[1]

@@ -118,5 +118,6 @@ class TestLoginCrypt:
         decrypted = crypt.decrypt_init(encrypted)
 
         # Должно вернуться что-то (XOR может изменить данные)
+        # decrypt_init отрезает 8 байт XOR tail, так что длина = 32 - 8 = 24
         assert isinstance(decrypted, bytes)
-        assert len(decrypted) == 32
+        assert len(decrypted) == 24  # 32 - 8 (XOR tail)

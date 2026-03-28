@@ -33,7 +33,7 @@ from l2py.protocol.login.server_packets import (
 class MockLoginServer:
     """Мок Login Server для тестирования."""
 
-    def __init__(self, host: str = "192.168.0.33", port: int = 0):
+    def __init__(self, host: str = "127.0.0.1", port: int = 0):
         self.host = host
         self.port = port
         self.server = None
@@ -59,45 +59,67 @@ class MockLoginServer:
 
     async def _handle_client(self, reader, writer):
         """Обрабатывает клиентское соединение."""
+        print(f"MockServer: Client connected")
         try:
             # Отправляем Init пакет
             await self._send_init(writer)
+            print("MockServer: Sent InitPacket")
 
             # Обрабатываем последующие пакеты
             while True:
                 try:
                     opcode, data = await self._read_packet(reader)
+                    print(f"MockServer: Received packet: opcode=0x{opcode:02X}, length={len(data)}")
                 except (asyncio.TimeoutError, asyncio.IncompleteReadError):
+                    print("MockServer: Client disconnected")
+                    break
+                except Exception as e:
+                    print(f"MockServer: Error reading packet: {e}")
                     break
 
                 if opcode == 0x07:  # AuthGameGuard
+                    print("MockServer: Handling AuthGameGuard (0x07)")
                     await self._send_gg_auth(writer)
+                    print("MockServer: Sent GGAuth (0x0B)")
 
                 elif opcode == 0x00:  # RequestAuthLogin
+                    print("MockServer: Handling RequestAuthLogin (0x00)")
                     await self._send_login_ok(writer)
+                    print("MockServer: Sent LoginOk (0x03)")
 
                 elif opcode == 0x05:  # RequestServerList
+                    print("MockServer: Handling RequestServerList (0x05)")
                     await self._send_server_list(writer)
+                    print("MockServer: Sent ServerList (0x04)")
 
                 elif opcode == 0x02:  # RequestServerLogin
+                    print("MockServer: Handling RequestServerLogin (0x02)")
                     await self._send_play_ok(writer)
+                    print("MockServer: Sent PlayOk (0x07)")
                     break
+                else:
+                    print(f"MockServer: Received UNKNOWN opcode 0x{opcode:02X}")
 
         finally:
             writer.close()
             await writer.wait_closed()
-
     async def _send_init(self, writer):
         """Отправляет Init пакет."""
         init_data = (
-            struct.pack("<I", 0x12345678)  # session_id
+            bytes([0x00])  # Init opcode
+            + struct.pack("<I", 0x12345678)  # session_id
             + struct.pack("<I", 267)  # protocol_version
             + b"\x00" * 128  # rsa_key
             + b"\x00" * 16  # gg data
-            + self.session_key
+            + self.session_key  # blowfish_key (16 bytes)
+            + b"\x00" * 7  # align
+            + b"\xDEADBEEF"  # XOR key (4 bytes)
+            + b"\x00" * 4  # padding for XOR tail
         )
-
-        encrypted = self.crypt._static_cipher.encrypt(init_data)
+        
+        # Используем новую функцию шифрования с XOR pass
+        encrypted = self.crypt.encrypt_init(init_data)
+        
         length = len(encrypted) + 2
         writer.write(length.to_bytes(2, "little") + encrypted)
         await writer.drain()
@@ -105,7 +127,7 @@ class MockLoginServer:
     async def _send_gg_auth(self, writer):
         """Отправляет GGAuth пакет."""
         response = bytes([0x0B]) + struct.pack("<I", 0)
-        encrypted = self.blowfish.encrypt(response)
+        encrypted = self.crypt.encrypt(response)
         length = len(encrypted) + 2
         writer.write(length.to_bytes(2, "little") + encrypted)
         await writer.drain()
@@ -113,24 +135,27 @@ class MockLoginServer:
     async def _send_login_ok(self, writer):
         """Отправляет LoginOk пакет."""
         response = bytes([0x03]) + struct.pack("<II", 0x11111111, 0x22222222)
-        encrypted = self.blowfish.encrypt(response)
+        encrypted = self.crypt.encrypt(response)
         length = len(encrypted) + 2
         writer.write(length.to_bytes(2, "little") + encrypted)
         await writer.drain()
 
     async def _send_server_list(self, writer):
         """Отправляет ServerList пакет."""
-        response = bytes([0x04, 0x01, 0x00])  # count=1, last_server=0
-        response += bytes([0x01])  # server_id
-        response += bytes([127, 0, 0, 1])  # ip
-        response += struct.pack("<I", 30000)  # port
-        response += bytes([0, 0])  # age_limit, pvp
-        response += struct.pack("<H", 100)  # online
-        response += struct.pack("<H", 400)  # max_online
-        response += bytes([1])  # status
-        response += b"\x00" * 7  # padding
-
-        encrypted = self.blowfish.encrypt(response)
+        # Opcode 0x04, Count 1, LastServer 1
+        # Server: ID 1, IP 127.0.0.1, Port 7777, AgeLimit 0, PVP 0, Online 0, MaxOnline 1000, Status 1
+        response = bytes([0x04, 0x01, 0x01]) + bytes([
+            0x01, # ID
+            127, 0, 0, 1, # IP
+            0x39, 0x1E, 0x00, 0x00, # Port 7777
+            0x00, # AgeLimit
+            0x00, # PVP
+            0x00, 0x00, # Online
+            0xE8, 0x03, # MaxOnline 1000
+            0x01, # Status
+        ]) + b"\x00" * 10 # Extra bytes
+        
+        encrypted = self.crypt.encrypt(response)
         length = len(encrypted) + 2
         writer.write(length.to_bytes(2, "little") + encrypted)
         await writer.drain()
@@ -138,7 +163,7 @@ class MockLoginServer:
     async def _send_play_ok(self, writer):
         """Отправляет PlayOk пакет."""
         response = bytes([0x07]) + struct.pack("<II", 0xAAAAAAAA, 0xBBBBBBBB)
-        encrypted = self.blowfish.encrypt(response)
+        encrypted = self.crypt.encrypt(response)
         length = len(encrypted) + 2
         writer.write(length.to_bytes(2, "little") + encrypted)
         await writer.drain()
@@ -149,7 +174,8 @@ class MockLoginServer:
         length = int.from_bytes(length_bytes, "little")
 
         body = await reader.readexactly(length - 2)
-        decrypted = self.blowfish.decrypt(body)
+        # Используем LoginCrypt для дешифрования и проверки чексуммы
+        decrypted = self.crypt.decrypt(body)
 
         return decrypted[0], decrypted[1:]
 
@@ -169,7 +195,6 @@ async def test_full_login_flow(mock_login_server):
     config = LoginConfig(
         host=mock_login_server.host,
         port=mock_login_server.port,
-        server_id=2,
     )
     credentials = Credentials(username="testuser", password="testpass")
 
@@ -177,7 +202,7 @@ async def test_full_login_flow(mock_login_server):
 
     assert isinstance(result, LoginResult)
     assert result.server.id == 1
-    assert result.server.ip == "192.168.0.33"
+    assert result.server.ip == "127.0.0.1"
     assert result.server.port == 30000
     assert result.play_ok1 == 0xAAAAAAAA
     assert result.play_ok2 == 0xBBBBBBBB
@@ -241,11 +266,14 @@ async def test_login_fail():
             crypt.set_key(session_key)
 
             init_data = (
-                struct.pack("<I", 1)
+                bytes([0x00])  # Init opcode
+                + struct.pack("<I", 1)
                 + struct.pack("<I", 267)
                 + b"\x00" * 128
                 + b"\x00" * 16
                 + session_key
+                + b"\x00" * 7  # align
+                + b"\x00" * 8  # XOR tail
             )
             encrypted = crypt._static_cipher.encrypt(init_data)
             length = len(encrypted) + 2
@@ -277,7 +305,7 @@ async def test_login_fail():
             writer.close()
             await writer.wait_closed()
 
-    server = await asyncio.start_server(handle_fail, "192.168.0.33", 0)
+    server = await asyncio.start_server(handle_fail, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
 
     try:

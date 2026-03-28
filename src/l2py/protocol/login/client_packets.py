@@ -73,17 +73,22 @@ class RequestAuthLoginPacket(ClientPacket):
         super().__init__()
 
     def _write(self) -> None:
-        """Записывает поля пакета."""
+        """Записывает поля пакета.
+        
+        Формат блока для RSA-шифрования (старый метод, 128 байт):
+        - [0x5E..0x6B] = username (14 байт, дополнен пробелами/нулем)
+        - [0x6C..0x7B] = password (16 байт)
+        """
         # Формируем 128-байтный блок для RSA-шифрования
         block = bytearray(128)
 
-        # [0..13] = нули (оставляем как есть)
-        # [14..] = username + \x00 + password
-        pos = 14
-        block[pos : pos + len(self.username)] = self.username.encode("ascii")
-        pos += len(self.username) + 1
-        block[pos : pos + len(self.password)] = self.password.encode("ascii")
-        # Остальное нулями
+        # Имя пользователя: смещение 0x5E (94), макс 14 байт
+        username_bytes = self.username.encode("ascii")[:14]
+        block[0x5E : 0x5E + len(username_bytes)] = username_bytes
+
+        # Пароль: смещение 0x6C (108), макс 16 байт
+        password_bytes = self.password.encode("ascii")[:16]
+        block[0x6C : 0x6C + len(password_bytes)] = password_bytes
 
         # RSA-шифрование
         encrypted = self.rsa.encrypt(bytes(block))
@@ -115,8 +120,8 @@ class RequestServerListPacket(ClientPacket):
 
     def _write(self) -> None:
         """Записывает поля пакета."""
-        self._writer.write_int32(self.login_ok1)
-        self._writer.write_int32(self.login_ok2)
+        self._writer.write_uint32(self.login_ok1)
+        self._writer.write_uint32(self.login_ok2)
         # Неизвестный байт (всегда 0x05)
         self._writer.write_byte(0x05)
 
@@ -142,8 +147,8 @@ class RequestServerLoginPacket(ClientPacket):
 
     def _write(self) -> None:
         """Записывает поля пакета."""
-        self._writer.write_int32(self.login_ok1)
-        self._writer.write_int32(self.login_ok2)
+        self._writer.write_uint32(self.login_ok1)
+        self._writer.write_uint32(self.login_ok2)
         self._writer.write_byte(self.server_id)
 
 

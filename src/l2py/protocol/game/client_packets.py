@@ -80,21 +80,19 @@ class AuthLoginPacket(ClientPacket):
     def _write(self) -> None:
         """Записывает поля пакета."""
         self._writer.write_string(self.login)
-        self._writer.write_int32(self.play_ok2)
-        self._writer.write_int32(self.play_ok1)
-        self._writer.write_int32(self.login_ok1)
-        self._writer.write_int32(self.login_ok2)
+        self._writer.write_uint32(self.play_ok2)
+        self._writer.write_uint32(self.play_ok1)
+        self._writer.write_uint32(self.login_ok1)
+        self._writer.write_uint32(self.login_ok2)
 
 
 class CharacterSelectPacket(ClientPacket):
     """Пакет выбора персонажа (C).
 
     Отправляется после получения списка персонажей.
-
-    TODO: Уточнить опкод для High Five (обычно 0x0D или 0x12).
     """
 
-    opcode: ClassVar[int] = 0x0D  # TODO: Verify for High Five (0x0D или 0x12)
+    opcode: ClassVar[int] = 0x12  # High Five
     __slots__ = ("slot_index",)
 
     def __init__(self, slot_index: int) -> None:
@@ -107,8 +105,15 @@ class CharacterSelectPacket(ClientPacket):
         super().__init__()
 
     def _write(self) -> None:
-        """Записывает поля пакета."""
+        """Записывает поля пакета.
+        
+        Формат: cd (int slot, short unk1, int unk2, int unk3, int unk4)
+        """
         self._writer.write_int32(self.slot_index)
+        self._writer.write_int16(0)  # unk1
+        self._writer.write_int32(0)  # unk2
+        self._writer.write_int32(0)  # unk3
+        self._writer.write_int32(0)  # unk4
 
 
 class EnterWorldPacket(ClientPacket):

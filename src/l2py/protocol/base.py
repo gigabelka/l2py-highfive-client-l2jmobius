@@ -94,6 +94,26 @@ class PacketReader:
         self._offset += 8
         return value
 
+    def read_float(self) -> float:
+        """Читает 4 байта (float, little-endian).
+
+        Returns:
+            Значение float.
+        """
+        value = struct.unpack("<f", self._data[self._offset : self._offset + 4])[0]
+        self._offset += 4
+        return value
+
+    def read_double(self) -> float:
+        """Читает 8 байт (double, little-endian).
+
+        Returns:
+            Значение double.
+        """
+        value = struct.unpack("<d", self._data[self._offset : self._offset + 8])[0]
+        self._offset += 8
+        return value
+
     def read_bytes(self, n: int) -> bytes:
         """Читает n байт.
 
@@ -180,6 +200,15 @@ class PacketWriter:
         """
         self._buffer.extend(struct.pack("<H", value))
 
+    def write_uint32(self, value: int) -> None:
+        """Записывает 4 байта (unsigned uint32, little-endian).
+
+        Args:
+            value: Значение для записи.
+        """
+        # Преобразуем signed int32 в unsigned bytes
+        self._buffer.extend(struct.pack("<i", value))
+
     def write_int32(self, value: int) -> None:
         """Записывает 4 байта (signed int32, little-endian).
 
@@ -189,12 +218,14 @@ class PacketWriter:
         self._buffer.extend(struct.pack("<i", value))
 
     def write_uint32(self, value: int) -> None:
-        """Записывает 4 байта (unsigned uint32, little-endian).
-
+        """Записывает 4 байта как signed int32 (little-endian).
+        
+        L2 протокол использует signed int32 для session keys.
+        
         Args:
             value: Значение для записи.
         """
-        self._buffer.extend(struct.pack("<I", value))
+        self._buffer.extend(struct.pack("<i", value))
 
     def write_int64(self, value: int) -> None:
         """Записывает 8 байт (signed int64, little-endian).
@@ -203,6 +234,22 @@ class PacketWriter:
             value: Значение для записи.
         """
         self._buffer.extend(struct.pack("<q", value))
+
+    def write_float(self, value: float) -> None:
+        """Записывает 4 байта (float, little-endian).
+
+        Args:
+            value: Значение для записи.
+        """
+        self._buffer.extend(struct.pack("<f", value))
+
+    def write_double(self, value: float) -> None:
+        """Записывает 8 байт (double, little-endian).
+
+        Args:
+            value: Значение для записи.
+        """
+        self._buffer.extend(struct.pack("<d", value))
 
     def write_bytes(self, data: bytes) -> None:
         """Записывает байты.

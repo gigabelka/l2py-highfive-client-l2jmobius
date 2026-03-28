@@ -32,7 +32,7 @@ from l2py.protocol.game.server_packets import (
 class MockGameServer:
     """Мок Game Server для тестирования."""
 
-    def __init__(self, host: str = "192.168.0.33", port: int = 0):
+    def __init__(self, host: str = "127.0.0.1", port: int = 0):
         self.host = host
         self.port = port
         self.server = None
@@ -250,7 +250,7 @@ async def test_no_characters():
             writer.close()
             await writer.wait_closed()
 
-    server = await asyncio.start_server(handle_no_chars, "192.168.0.33", 0)
+    server = await asyncio.start_server(handle_no_chars, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
 
     try:

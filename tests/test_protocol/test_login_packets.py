@@ -81,7 +81,7 @@ class TestServerPackets:
             b"\x01"  # count = 1
             b"\x00"  # last_server = 0
             b"\x01"  # server_id = 1
-            + b"\x7F\x00\x00\x01"  # IP = 192.168.0.33
+            + b"\x7F\x00\x00\x01"  # IP = 127.0.0.1
             + b"\x30\x75\x00\x00"  # port = 30000
             b"\x00"  # age_limit = 0
             b"\x00"  # is_pvp = 0
@@ -97,7 +97,7 @@ class TestServerPackets:
         server = packet.servers[0]
         assert isinstance(server, GameServer)
         assert server.id == 1
-        assert server.ip == "192.168.0.33"
+        assert server.ip == "127.0.0.1"
         assert server.port == 30000
         assert server.online == 100
         assert server.max_online == 400
@@ -154,7 +154,7 @@ class TestClientPackets:
         packet = RequestServerLoginPacket(
             login_ok1=0x11111111,
             login_ok2=0x22222222,
-            server_id=2,
+            server_id=1,
         )
         data = packet.to_bytes()
 

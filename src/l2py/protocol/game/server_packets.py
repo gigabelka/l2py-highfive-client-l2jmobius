@@ -60,7 +60,7 @@ class CharSelectionInfoPacket(ServerPacket):
     TODO: Уточнить опкод для High Five (0x09 или 0x13).
     """
 
-    opcode: ClassVar[int] = 0x13  # TODO: Verify for High Five (0x09 или 0x13)
+    opcode: ClassVar[int] = 0x09  # High Five
     __slots__ = ("characters",)
 
     def __init__(self, data: bytes) -> None:
@@ -73,46 +73,102 @@ class CharSelectionInfoPacket(ServerPacket):
         super().__init__(data)
 
     def _read(self) -> None:
-        """Парсит поля пакета."""
-        # Количество персонажей
-        char_count = self._reader.read_byte()
+        """Парсит поля пакета (L2JMobius High Five формат)."""
+        # Количество персонажей (Int, не Byte!)
+        char_count = self._reader.read_int32()
+        
+        # Максимальное количество персонажей
+        max_chars = self._reader.read_int32()
+        
+        # Unknown byte
+        self._reader.read_byte()
 
-        for _ in range(char_count):
+        for i in range(char_count):
             name = self._reader.read_string()
-            login = self._reader.read_string()
+            object_id = self._reader.read_int32()
+            login_name = self._reader.read_string()
             session_id = self._reader.read_int32()
             clan_id = self._reader.read_int32()
-
-            # Пропускаем constructType и other data
-            self._reader.skip(4)  # constructType
-
+            
+            # Builder level
+            self._reader.read_int32()
+            
             sex = self._reader.read_int32()
             race = self._reader.read_int32()
             base_class_id = self._reader.read_int32()
-
-            # Active (1 = active, 0 = inactive)
-            active = self._reader.read_byte() != 0
-
-            # Пропускаем x, y, z (3 * 4 байта)
+            
+            # GameServerName
+            self._reader.read_int32()
+            
             x = self._reader.read_int32()
             y = self._reader.read_int32()
             z = self._reader.read_int32()
-
-            # HP/MP (float)
-            hp = self._reader.read_float()
-            mp = self._reader.read_float()
-
+            
+            # HP/MP как double
+            hp = self._reader.read_double()
+            mp = self._reader.read_double()
+            
             sp = self._reader.read_int32()
             exp = self._reader.read_int64()
+            
+            # High Five exp percentage
+            self._reader.read_double()
+            
             level = self._reader.read_int32()
-
-            # Karma и другие поля пропускаем
-            # TODO: Допарсить оставшиеся поля для полной структуры
+            
+            # Karma, PK, PVP kills
+            karma = self._reader.read_int32()
+            pk_kills = self._reader.read_int32()
+            pvp_kills = self._reader.read_int32()
+            
+            # 7x int zeros
+            for _ in range(7):
+                self._reader.read_int32()
+            
+            # Paperdoll items (17 slots)
+            for _ in range(17):
+                self._reader.read_int32()
+            
+            # Hair style, color, face
+            hair_style = self._reader.read_int32()
+            hair_color = self._reader.read_int32()
+            face = self._reader.read_int32()
+            
+            # Max HP/MP
+            max_hp = self._reader.read_double()
+            max_mp = self._reader.read_double()
+            
+            # Delete timer / ban status
+            self._reader.read_int32()
+            
+            # Class ID
+            class_id = self._reader.read_int32()
+            
+            # Active
+            active = self._reader.read_int32() != 0
+            
+            # Enchant effect
+            self._reader.read_byte()
+            
+            # Augmentation
+            self._reader.read_int32()
+            
+            # Transform (0)
+            self._reader.read_int32()
+            
+            # Pet info (5x int + 2x double)
+            for _ in range(5):
+                self._reader.read_int32()
+            self._reader.read_double()
+            self._reader.read_double()
+            
+            # Vitality
+            vitality = self._reader.read_int32()
 
             char = CharacterInfo(
                 name=name,
                 race=race,
-                class_id=base_class_id,
+                class_id=class_id,
                 level=level,
                 sex=sex,
                 x=x,
@@ -120,10 +176,21 @@ class CharSelectionInfoPacket(ServerPacket):
                 z=z,
                 hp=hp,
                 mp=mp,
+                max_hp=max_hp,
+                max_mp=max_mp,
                 sp=sp,
                 exp=exp,
                 session_id=session_id,
                 clan_id=clan_id,
+                karma=karma,
+                pk_kills=pk_kills,
+                pvp_kills=pvp_kills,
+                hair_style=hair_style,
+                hair_color=hair_color,
+                face=face,
+                vitality=vitality,
+                object_id=object_id,
+                active=active,
             )
             self.characters.append(char)
 
@@ -137,7 +204,7 @@ class CharSelectedPacket(ServerPacket):
     TODO: Уточнить опкод для High Five (обычно 0x15).
     """
 
-    opcode: ClassVar[int] = 0x15  # TODO: Verify for High Five
+    opcode: ClassVar[int] = 0x0B  # High Five
     __slots__ = (
         "name",
         "session_id",
