@@ -104,6 +104,9 @@ class LoginConnection:
                 self._reader.readexactly(length - 2),
                 timeout=DEFAULT_TIMEOUT,
             )
+            
+            # DEBUG: Логируем сырые данные
+            logger.debug(f"[Login] Raw packet: length={length}, body={body.hex()}")
 
             # Дешифруем
             if self._is_first_packet:

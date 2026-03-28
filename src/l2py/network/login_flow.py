@@ -89,17 +89,19 @@ class LoginFlow:
     6. Выбор сервера и получение PlayOk
     """
 
-    __slots__ = ("_config", "_credentials")
+    __slots__ = ("_config", "_credentials", "_server_id")
 
-    def __init__(self, config: LoginConfig, credentials: Credentials) -> None:
+    def __init__(self, config: LoginConfig, credentials: Credentials, server_id: int = 2) -> None:
         """Инициализация flow.
 
         Args:
             config: Конфигурация подключения.
             credentials: Учётные данные.
+            server_id: ID игрового сервера.
         """
         self._config = config
         self._credentials = credentials
+        self._server_id = server_id
 
     async def execute(self) -> LoginResult:
         """Выполняет полный процесс авторизации.
@@ -268,7 +270,7 @@ class LoginFlow:
             Выбранный сервер или None.
         """
         for server in servers:
-            if server.id == self._config.server_id:
+            if server.id == self._server_id:
                 return server
         return servers[0] if servers else None
 

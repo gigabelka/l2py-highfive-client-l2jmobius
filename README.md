@@ -16,17 +16,28 @@
 
 ## Установка
 
-```bash
-pip install l2py
-```
+# Создайте виртуальное окружение
 
-Или из исходников:
+python -m venv .venv
 
-```bash
-git clone https://github.com/l2py/l2py-highfive-client.git
-cd l2py-highfive-client
+# Активируйте его
+
+# Windows:
+
+.venv\Scripts\activate
+
+# Linux/Mac:
+
+source .venv/bin/activate
+
+# Установите проект в режиме разработки
+
 pip install -e ".[dev]"
-```
+
+# Запуск
+
+.venv\Scripts\activate
+python main.py
 
 ## Быстрый старт
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""pyproject.toml для l2py — asyncio-клиент Lineage 2 High Five."""
+# pyproject.toml для l2py — asyncio-клиент Lineage 2 High Five.
 
 [build-system]
 requires = ["hatchling"]

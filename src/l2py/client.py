@@ -38,7 +38,7 @@ class L2Client:
         password: str,
         host: str = "192.168.0.33",
         port: int = 2106,
-        server_id: int = 1,
+        server_id: int = 2,
         char_slot: int = 0,
     ) -> GameSession:
         """Выполняет полный login flow: авторизация → выбор сервера → вход в мир.
@@ -65,12 +65,12 @@ class L2Client:
         )
 
         # Создаём конфигурации
-        login_config = LoginConfig(host=host, port=port, server_id=server_id)
+        login_config = LoginConfig(host=host, port=port)
         credentials = Credentials(username=username, password=password)
 
         # Фаза 1: Авторизация на Login Server
         logger.debug("Phase 1: Login Server authentication")
-        login_result = await LoginFlow(login_config, credentials).execute()
+        login_result = await LoginFlow(login_config, credentials, server_id).execute()
 
         # Фаза 2: Вход в игровой мир
         logger.debug("Phase 2: Game Server connection")

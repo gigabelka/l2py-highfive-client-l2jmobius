@@ -43,7 +43,7 @@ class ConnectionConfig:
         char_slot: Индекс слота персонажа (по умолчанию 0).
     """
 
-    server_id: int = 1
+    server_id: int = 2
     char_slot: int = 0
 
 
