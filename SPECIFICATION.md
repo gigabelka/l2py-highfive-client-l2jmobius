@@ -227,14 +227,17 @@ assert newcrypt_checksum_ok(plain)          # last 4 bytes = XOR of all precedin
 
 ```
 body = opcode_byte + fields...              # raw, unencrypted
-# 1. pad to multiple of 4 with zeros
-# 2. append 8 zero bytes (4 reserved for checksum + 4 spare)
-# 3. pad to next multiple of 8 with zeros (adds 0 or 4 zero bytes, since
-#    after step 2 the buffer is already a multiple of 4)
-# 4. write checksum into the last 4 bytes of the *3-step-padded* buffer
-# 5. Blowfish-ECB encrypt with SESSION_KEY
-# 6. prepend u16 LE length (encrypted_len + 2)
+# 1. compute how many zero bytes must be added so that (len(body) + 4)
+#    becomes a multiple of 8 — i.e. pad = (8 - (len(body) + 4) % 8) % 8
+# 2. append `pad` zero bytes, then 4 zero bytes reserved for the checksum
+#    (the buffer is now a multiple of 8)
+# 3. compute the §3.2 XOR checksum over every DWORD except the last one,
+#    and write it into the trailing 4 bytes
+# 4. Blowfish-ECB encrypt with SESSION_KEY
+# 5. prepend u16 LE length (encrypted_len + 2)
 ```
+
+The single-step formula above is equivalent to the older "pad-to-4 / append-8 / pad-to-8" description and is the shape the reference client actually uses.
 
 ### 3.7 Game XOR stream cipher
 
@@ -413,22 +416,21 @@ Total payload: **170 bytes**.
 
 Reason codes recognised by the reference client (all codes are hex):
 
-| Code   | Meaning                   |
-| ------ | ------------------------- |
-| `0x01` | System error              |
-| `0x02` | Wrong password            |
-| `0x03` | Wrong login or password   |
-| `0x04` | Access denied             |
-| `0x05` | Invalid account info      |
-| `0x06` | Access denied (try later) |
-| `0x07` | Account already in use    |
-| `0x08` | Age restriction           |
-| `0x09` | Server full               |
-| `0x10` | Maintenance               |
-| `0x11` | Temporary ban             |
-| `0x23` | Dual box restriction      |
+| Code   | Meaning                              |
+| ------ | ------------------------------------ |
+| `0x01` | Account does not exist               |
+| `0x02` | Password is incorrect                |
+| `0x03` | Password does not match this account |
+| `0x04` | Account is banned                    |
+| `0x05` | Account is already in use            |
+| `0x06` | Server is under maintenance          |
+| `0x07` | Account is already in use            |
+| `0x08` | Server is full                       |
+| `0x09` | Server is under maintenance          |
+| `0x0A` | Login is currently prohibited        |
+| `0x0B` | Server is full (queue)               |
 
-Codes outside this set are logged as `Unknown reason (0x…)` and treated as fatal. On any LoginFail the client must close the connection.
+Codes outside this set are logged as `Unknown reason (0x…)` and treated as fatal. Code `0x07` is specifically transient: the reference client waits a few seconds and retries. On any other LoginFail the client must close the connection.
 
 ### 4.5 LoginOk (S→C, opcode `0x03`)
 
@@ -446,10 +448,10 @@ Both tokens must be remembered — they are sent in RequestServerList, RequestSe
 | -------- | ----------------- | ------------------------- |
 | 0        | opcode            | `u8` = `0x04`             |
 | 1        | `serverCount`     | `u8`                      |
-| 2        | reserved          | `u8`                      |
-| 3 + k·21 | server record `k` | see below (21 bytes each) |
+| 2        | `lastServer`      | `u8`                      |
+| 3 + k·23 | server record `k` | see below (23 bytes each) |
 
-**Server record (21 bytes):**
+**Server record (23 bytes):**
 
 | Offset | Field           | Type       | Notes                                                  |
 | ------ | --------------- | ---------- | ------------------------------------------------------ |
@@ -461,8 +463,9 @@ Both tokens must be remembered — they are sent in RequestServerList, RequestSe
 | 11     | `onlinePlayers` | `u16`      |                                                        |
 | 13     | `maxPlayers`    | `u16`      |                                                        |
 | 15     | `isOnline`      | `u8`       | `0`/`1`                                                |
-| 16     | `flags`         | `i32`      | informational                                          |
-| 20     | reserved        | `u8`       |                                                        |
+| 16     | trailing        | `bytes[7]` | opaque — size may differ across Mobius builds          |
+
+The trailing 7 bytes carry `flags i32`, brackets flag, and other informational fields in some builds; a client only needs the first 16 bytes to connect. The reader should tolerate a varying trailing-block length.
 
 The client selects the record whose `serverId` matches the configured `ServerId` and uses its `ip:port` for the Game Server connection.
 
@@ -504,24 +507,19 @@ The client must remember `ggAuthResponse` and echo it inside RequestAuthLogin.
 
 ### 4.10 RequestAuthLogin (C→S, opcode `0x00`)
 
-Body size: **176 bytes** (before padding/encryption).
+Body size: **145 bytes** (before padding/encryption).
 
-| Offset | Field            | Type         | Size |
-| ------ | ---------------- | ------------ | ---- |
-| 0      | opcode           | `u8`         | 1    |
-| 1      | RSA ciphertext   | `bytes[128]` | 128  |
-| 129    | `ggAuthResponse` | `i32`        | 4    |
-| 133    | fixed GG block   | `bytes[43]`  | 43   |
-
-The fixed GG block (hex):
-
-```
-23 01 00 00 67 45 00 00 AB 89 00 00 EF CD 00 00
-08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-00 00 00 00 00 00 00 00 00 00 00
-```
+| Offset | Field          | Type         | Size | Notes                                 |
+| ------ | -------------- | ------------ | ---- | ------------------------------------- |
+| 0      | opcode         | `u8`         | 1    | `0x00`                                |
+| 1      | RSA ciphertext | `bytes[128]` | 128  | encrypted credentials (§3.4)          |
+| 129    | `loginOkId1`   | `i32`        | 4    | `0` on first login (no LoginOk yet)   |
+| 133    | `loginOkId2`   | `i32`        | 4    | `0` on first login                    |
+| 137    | padding        | `bytes[8]`   | 8    | zeros                                 |
 
 The 128-byte RSA ciphertext is computed per §3.4 from the login, password, and the unscrambled modulus from Init.
+
+L2J Mobius does not validate the two `loginOkId` fields or the 8 trailing bytes on this packet — they were meaningful in earlier chronicles (and earlier documentation of this protocol referenced a 43-byte fixed GG block plus `ggAuthResponse`), but in CT 2.6 HighFive only the RSA ciphertext matters. Sending them as zeros is what the reference client does.
 
 ### 4.11 RequestServerLogin (C→S, opcode `0x02`)
 
@@ -534,26 +532,26 @@ The 128-byte RSA ciphertext is computed per §3.4 from the login, password, and 
 
 ### 4.12 RequestServerList (C→S, opcode `0x05`)
 
-| Offset | Field        | Type  | Value                 |
-| ------ | ------------ | ----- | --------------------- |
-| 0      | opcode       | `u8`  | `0x05`                |
-| 1      | `loginOkId1` | `i32` | from LoginOk          |
-| 5      | `loginOkId2` | `i32` | from LoginOk          |
-| 9      | `flags`      | `i32` | constant `0x04000000` |
+Total body size: **10 bytes**.
+
+| Offset | Field        | Type  | Value                |
+| ------ | ------------ | ----- | -------------------- |
+| 0      | opcode       | `u8`  | `0x05`               |
+| 1      | `loginOkId1` | `i32` | from LoginOk         |
+| 5      | `loginOkId2` | `i32` | from LoginOk         |
+| 9      | `flags`      | `u8`  | constant `0x05`      |
 
 ### 4.13 RequestGGAuth (C→S, opcode `0x07`)
 
-Body size: **40 bytes** (before padding/encryption).
+Body size: **21 bytes** (before padding/encryption).
 
-| Offset | Field       | Type        | Value        |
-| ------ | ----------- | ----------- | ------------ |
-| 0      | opcode      | `u8`        | `0x07`       |
-| 1      | `sessionId` | `i32`       | from Init    |
-| 5      | constant 1  | `i32`       | `0x00000123` |
-| 9      | constant 2  | `i32`       | `0x00004567` |
-| 13     | constant 3  | `i32`       | `0x000089AB` |
-| 17     | constant 4  | `i32`       | `0x0000CDEF` |
-| 21     | padding     | `bytes[19]` | zeros        |
+| Offset | Field       | Type        | Value     |
+| ------ | ----------- | ----------- | --------- |
+| 0      | opcode      | `u8`        | `0x07`    |
+| 1      | `sessionId` | `i32`       | from Init |
+| 5      | padding     | `bytes[16]` | zeros     |
+
+L2J Mobius does not verify the trailing 16 bytes — any content is accepted. Historical L2 documentation lists four `i32` GG constants (`0x00000123`, `0x00004567`, `0x000089AB`, `0x0000CDEF`) followed by 19 zero bytes; they are _not_ required by this server.
 
 ### 4.14 Annotated hex dumps
 
@@ -579,14 +577,14 @@ DD CC BB AA                                      ; loginOkId1 = 0xAABBCCDD
 44 33 22 11                                      ; loginOkId2 = 0x11223344
 ```
 
-**4.14.3 ServerList (S→C, `0x04`) with one record — 24 bytes** (§4.6).
+**4.14.3 ServerList (S→C, `0x04`) with one record — 26 bytes** (§4.6).
 
 ```
 04                                               ; opcode = 0x04
 01                                               ; serverCount = 1
-00                                               ; reserved
+00                                               ; lastServer
 
-; --- server record 0 (21 bytes) ---
+; --- server record 0 (23 bytes) ---
 01                                               ; serverId = 1
 7F 00 00 01                                      ; ip = 127.0.0.1 (bytes in display order)
 61 1E 00 00                                      ; port = 7777 (i32 LE)
@@ -595,8 +593,7 @@ DD CC BB AA                                      ; loginOkId1 = 0xAABBCCDD
 32 00                                            ; onlinePlayers = 50 (u16 LE)
 88 13                                            ; maxPlayers    = 5000 (u16 LE)
 01                                               ; isOnline = true
-00 00 00 00                                      ; flags = 0 (i32 LE)
-00                                               ; reserved
+00 00 00 00 00 00 00                             ; trailing opaque bytes (7)
 ```
 
 **4.14.4 GGAuth (S→C, `0x0B`) — 5 bytes** (§4.9).
@@ -610,7 +607,7 @@ EF BE AD DE                                      ; ggAuthResponse = 0xDEADBEEF
 
 ```
 01                                               ; opcode = 0x01
-03                                               ; reason = 0x03 "Wrong login or password"
+03                                               ; reason = 0x03 "Password does not match this account"
 ```
 
 **4.14.6 PlayOk (S→C, `0x07`) — 9 bytes** (§4.8).
@@ -628,37 +625,31 @@ F0 DE BC 9A                                      ; playOkId2 = 0x9ABCDEF0
 0F 00 00 00                                      ; reason = 0x0F "Too many players"
 ```
 
-**4.14.8 RequestAuthLogin (C→S, `0x00`) — 176 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the GG block is a fixed 43-byte blob shown in full.
+**4.14.8 RequestAuthLogin (C→S, `0x00`) — 145 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the trailing 16 bytes are `loginOkId1/2` (zero on first login) plus 8 zero bytes of padding.
 
 ```
 00                                               ; opcode = 0x00
 <128 bytes RSA ciphertext>                       ; offsets 0x01..0x80
-EF BE AD DE                                      ; ggAuthResponse echo (from GGAuth)
-23 01 00 00 67 45 00 00 AB 89 00 00 EF CD 00 00  ; GG fixed block, bytes 0x85..0x94
-08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; bytes 0x95..0xA4
-00 00 00 00 00 00 00 00 00 00 00                 ; bytes 0xA5..0xAF
+00 00 00 00                                      ; loginOkId1 = 0 (no LoginOk yet)
+00 00 00 00                                      ; loginOkId2 = 0
+00 00 00 00 00 00 00 00                          ; 8 zero bytes of padding
 ```
 
-**4.14.9 RequestGGAuth (C→S, `0x07`) — 40 bytes, pre-encryption** (§4.13).
+**4.14.9 RequestGGAuth (C→S, `0x07`) — 21 bytes, pre-encryption** (§4.13).
 
 ```
 07                                               ; opcode = 0x07
 44 33 22 11                                      ; sessionId echo = 0x11223344
-23 01 00 00                                      ; const 1 = 0x00000123
-67 45 00 00                                      ; const 2 = 0x00004567
-AB 89 00 00                                      ; const 3 = 0x000089AB
-EF CD 00 00                                      ; const 4 = 0x0000CDEF
 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; 16 zero bytes of padding
-00 00 00                                         ; 3 more zero bytes (total 19 zero pad)
 ```
 
-**4.14.10 RequestServerList (C→S, `0x05`) — 13 bytes, pre-encryption** (§4.12).
+**4.14.10 RequestServerList (C→S, `0x05`) — 10 bytes, pre-encryption** (§4.12).
 
 ```
 05                                               ; opcode = 0x05
 DD CC BB AA                                      ; loginOkId1 = 0xAABBCCDD
 44 33 22 11                                      ; loginOkId2 = 0x11223344
-00 00 00 04                                      ; flags = 0x04000000 (i32 LE)
+05                                               ; flags = 0x05 (u8)
 ```
 
 **4.14.11 RequestServerLogin (C→S, `0x02`) — 10 bytes, pre-encryption** (§4.11).
@@ -733,13 +724,17 @@ Every multi-byte field below is little-endian. Opcodes are the first byte of the
 
 23-byte packet (body, without the 2-byte length prefix):
 
-| Offset | Field            | Type       | Notes                                                   |
-| ------ | ---------------- | ---------- | ------------------------------------------------------- |
-| 0      | opcode           | `u8`       | `0x2E`                                                  |
-| 1      | `result`         | `u8`       | must be `1` for success; any other value is a rejection |
-| 2      | `xorKey`         | `bytes[8]` | first 8 bytes of the stream cipher key                  |
-| 10     | `encryptionFlag` | `u32`      | non-zero → encryption enabled for subsequent packets    |
-| 14     | reserved         | `bytes[9]` | ignored                                                 |
+| Offset | Field             | Type       | Notes                                                   |
+| ------ | ----------------- | ---------- | ------------------------------------------------------- |
+| 0      | opcode            | `u8`       | `0x2E`                                                  |
+| 1      | `result`          | `u8`       | must be `1` for success; any other value is a rejection |
+| 2      | `xorKey`          | `bytes[8]` | first 8 bytes of the stream cipher key                  |
+| 10     | `encryptionFlag`  | `u32`      | non-zero → encryption enabled for subsequent packets    |
+| 14     | `serverId`        | `i32`      | optional — present in L2J Mobius CT 2.6                 |
+| 18     | `obfuscationFlag` | `u8`       | optional                                                |
+| 19     | `obfuscationKey`  | `i32`      | optional                                                |
+
+The 9 bytes starting at offset 14 are what older documentation calls "reserved"; L2J Mobius CT 2.6 populates them as shown above. A client must tolerate packets shorter than 23 bytes (parsing extra fields only when bytes remain).
 
 After receiving CryptInit, the client builds `key_cs` and `key_sc` as `xorKey || staticTail` (§3.7) and enables encryption according to `encryptionFlag`.
 
@@ -762,25 +757,66 @@ The reference client passes `encryptionFlag` directly into its crypt layer (`thi
 
 #### 5.3.4 CharSelectionInfo (S→C, opcode `0x09`)
 
-| Offset | Field             | Type          |
-| ------ | ----------------- | ------------- |
-| 0      | opcode            | `u8` = `0x09` |
-| 1      | `charCount`       | `u32`         |
-| 5      | character records | variable      |
+**Header:**
 
-The auto-login algorithm does not need to parse character records; it simply picks `CONFIG.CharSlotIndex` (default `0`) and sends CharacterSelected. A reimplementer that wants to display the character list must parse each record: per-character data includes the character name (UTF-16LE string), character id (`i32`), access level (`i32`), class id (`i32`), last used flag, and a variable-length block with appearance, stats, and equipment. The layout is stable across L2J Mobius builds but is irrelevant for auto-entering the world, so its full decoding is out of scope here.
+| Offset | Field             | Type          | Notes                 |
+| ------ | ----------------- | ------------- | --------------------- |
+| 0      | opcode            | `u8` = `0x09` |                       |
+| 1      | `charCount`       | `i32`         | number of records     |
+| 5      | `maxChars`        | `i32`         | account character cap |
+| 9      | reserved          | `u8`          | ignored               |
+| 10     | character records | variable      | see below             |
+
+**Per-character record (variable length due to two embedded `str` fields):**
+
+| #   | Field                        | Type        | Notes                                               |
+| --- | ---------------------------- | ----------- | --------------------------------------------------- |
+| 1   | `name`                       | `str`       | UTF-16LE + `u16 0x0000`                             |
+| 2   | `objectId`                   | `i32`       | unique character id                                 |
+| 3   | `loginName`                  | `str`       | account login                                       |
+| 4   | `sessionId`                  | `i32`       | echoes the login session token                      |
+| 5   | `clanId`                     | `i32`       | `0` if no clan                                      |
+| 6   | `builderLevel`               | `i32`       |                                                     |
+| 7   | `sex`                        | `i32`       | `0`=male, `1`=female                                |
+| 8   | `race`                       | `i32`       |                                                     |
+| 9   | `baseClassId`                | `i32`       |                                                     |
+| 10  | `gameServerName`             | `i32`       | server id                                           |
+| 11  | `x`, `y`, `z`                | `i32` × 3   | last known coords                                   |
+| 12  | `hp`, `mp`                   | `f64` × 2   | current                                             |
+| 13  | `sp`                         | `i32`       |                                                     |
+| 14  | `exp`                        | `i64`       |                                                     |
+| 15  | `expPct`                     | `f64`       | HighFive: progress toward next level                |
+| 16  | `level`                      | `i32`       |                                                     |
+| 17  | `karma`, `pkKills`, `pvpKills` | `i32` × 3 |                                                     |
+| 18  | reserved                     | `i32` × 7   | zeros                                               |
+| 19  | `paperdoll[0..17]`           | `i32` × 17  | item ids per paperdoll slot                         |
+| 20  | `hairStyle`, `hairColor`, `face` | `i32` × 3 |                                                 |
+| 21  | `maxHp`, `maxMp`             | `f64` × 2   |                                                     |
+| 22  | `deleteTimer`                | `i32`       | seconds remaining, or `0`                           |
+| 23  | `classId`                    | `i32`       | current (subclass) class id                         |
+| 24  | `active`                     | `i32`       | `!=0` → last-played character                       |
+| 25  | `enchantEffect`              | `u8`        |                                                     |
+| 26  | `augmentation`               | `i32`       |                                                     |
+| 27  | `transform`                  | `i32`       |                                                     |
+| 28  | pet info                     | `i32` × 5 + `f64` × 2 | id/name-id/level/max-hp/max-mp/etc.       |
+| 29  | `vitality`                   | `i32`       |                                                     |
+
+The auto-login algorithm does not need any of these fields beyond the count — it picks `CONFIG.CharSlotIndex` (default `0`) and sends CharacterSelected. A reimplementer that wants to display or filter the list must parse each record in order; the layout above matches what L2J Mobius CT 2.6 HighFive emits.
 
 #### 5.3.5 CharacterSelected (C→S, opcode `0x12`)
 
-Total body size: **19 bytes** (1 opcode + 4 `slotIndex` + 14 zero pad).
+Total body size: **19 bytes**.
 
-| Offset | Field       | Type        | Value     |
-| ------ | ----------- | ----------- | --------- |
-| 0      | opcode      | `u8`        | `0x12`    |
-| 1      | `slotIndex` | `i32`       | 0-based   |
-| 5      | padding     | `bytes[14]` | all zeros |
+| Offset | Field       | Type  | Value   |
+| ------ | ----------- | ----- | ------- |
+| 0      | opcode      | `u8`  | `0x12`  |
+| 1      | `slotIndex` | `i32` | 0-based |
+| 5      | `unk1`      | `i16` | `0`     |
+| 7      | `unk2`      | `i32` | `0`     |
+| 11     | `unk3`      | `i32` | `0`     |
+| 15     | `unk4`      | `i32` | `0`     |
 
-**The 14 zero bytes are mandatory on L2J Mobius** — the server reads them and will disconnect otherwise.
+**All four trailing fields are mandatory on L2J Mobius** — the server reads them (`cd` followed by `hddd` in dispatch terms) and will disconnect on underflow. On the wire they are 14 zero bytes; the field breakdown matches the server's `readH()/readD()` sequence.
 
 #### 5.3.6 CharSelected (S→C, opcode `0x0B`)
 
@@ -992,21 +1028,19 @@ rsaModulus = unscramble_rsa_key(scrambledRsaKey)  # §3.4
 currentLoginKey = sessionBlowfishKey              # switch from static to session key
 
 # --- RequestGGAuth (0x07) ---
-body = bytes([0x07]) + i32_le(sessionId)
-     + i32_le(0x123) + i32_le(0x4567) + i32_le(0x89AB) + i32_le(0xCDEF)
-     + zeros(19)                                   # body = 40 bytes
+body = bytes([0x07]) + i32_le(sessionId) + zeros(16)    # body = 21 bytes
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
 gg = decrypt_login(pkt.body, currentLoginKey)     # Blowfish + verify checksum
 assert gg[0] == 0x0B
-ggAuthResponse = i32_le(gg[1:5])
+# ggAuthResponse is not echoed back by L2J Mobius; any value is ignored.
 
 # --- RequestAuthLogin (0x00) ---
 plaintext = zeros(94) + ascii_right_padded(username, 14) + zeros(2)
           + ascii_right_padded(password, 16) + zeros(2)               # 128 bytes
 rsaCipher = rsa_encrypt_no_padding(plaintext, rsaModulus, e=65537)    # 128 bytes
-body = bytes([0x00]) + rsaCipher + i32_le(ggAuthResponse) + GG_FIXED_BLOCK_43
+body = bytes([0x00]) + rsaCipher + i32_le(0) + i32_le(0) + zeros(8)   # body = 145 bytes
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
@@ -1017,7 +1051,7 @@ loginOkId1 = i32_le(ok[1:5])
 loginOkId2 = i32_le(ok[5:9])
 
 # --- RequestServerList (0x05) ---
-body = bytes([0x05]) + i32_le(loginOkId1) + i32_le(loginOkId2) + i32_le(0x04000000)
+body = bytes([0x05]) + i32_le(loginOkId1) + i32_le(loginOkId2) + bytes([0x05])
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
@@ -1026,8 +1060,8 @@ assert sl[0] == 0x04
 count = sl[1]; pos = 3
 servers = []
 for i in 0..count:
-    rec = parse_server_record(sl[pos : pos+21])   # §4.6
-    pos += 21
+    rec = parse_server_record(sl[pos : pos+23])   # §4.6
+    pos += 23
     servers.append(rec)
 
 chosen = first(s for s in servers if s.serverId == targetServerId)
@@ -1170,12 +1204,12 @@ Use this list when porting to a new language. Tick every box to have a working a
 | Expected Init protocol revision   | `0x0000C621`                                                   | Init (§4.3)              |
 | Static login Blowfish key         | `6B 60 CB 5B 82 CE 90 B1 CC 2B 6C 55 6C 6C 6C 6C`              | Init decryption (§3.5)   |
 | Static game XOR tail              | `C8 27 93 01 A1 6C 31 97`                                      | XOR key (§3.7)           |
-| RequestServerList flags           | `0x04000000`                                                   | §4.12                    |
-| RequestGGAuth constants           | `0x00000123`, `0x00004567`, `0x000089AB`, `0x0000CDEF`         | §4.13                    |
-| RequestAuthLogin fixed GG block   | 43 bytes starting `23 01 00 00 67 45 00 00 AB 89 ...`          | §4.10                    |
+| RequestServerList flags           | `u8 = 0x05`                                                    | §4.12                    |
+| RequestGGAuth trailing            | 16 zero bytes after `sessionId` (no GG constants)              | §4.13                    |
+| RequestAuthLogin trailing         | `loginOkId1 (i32) + loginOkId2 (i32) + 8 zero bytes` (all zeros on first login) | §4.10   |
 | RSA plaintext layout              | 94 zero / 14 login / 2 zero / 16 password / 2 zero = 128 bytes | §3.4                     |
 | RSA public exponent               | `65537` (`0x10001`)                                            | §3.4                     |
-| CharacterSelected padding         | 14 zero bytes after `slotIndex`                                | §5.3.5                   |
+| CharacterSelected padding         | 14 zero bytes after `slotIndex` (`i16 + i32 + i32 + i32`)      | §5.3.5                   |
 | EnterWorld padding                | 104 zero bytes after opcode                                    | §5.3.8                   |
 | NetPing observed wire form        | opcode + `i32 pingId` (5-byte body)                            | §5.4.2                   |
 | NetPing legacy trailing constants | `0x00000000`, `0x00080000` (optional)                          | §5.4.2                   |
@@ -1183,20 +1217,19 @@ Use this list when porting to a new language. Tick every box to have a working a
 
 **LoginFail reason codes** (§4.4):
 
-| Code   | Meaning                   |
-| ------ | ------------------------- |
-| `0x01` | System error              |
-| `0x02` | Wrong password            |
-| `0x03` | Wrong login or password   |
-| `0x04` | Access denied             |
-| `0x05` | Invalid account info      |
-| `0x06` | Access denied (try later) |
-| `0x07` | Account already in use    |
-| `0x08` | Age restriction           |
-| `0x09` | Server full               |
-| `0x10` | Maintenance               |
-| `0x11` | Temporary ban             |
-| `0x23` | Dual box restriction      |
+| Code   | Meaning                              |
+| ------ | ------------------------------------ |
+| `0x01` | Account does not exist               |
+| `0x02` | Password is incorrect                |
+| `0x03` | Password does not match this account |
+| `0x04` | Account is banned                    |
+| `0x05` | Account is already in use            |
+| `0x06` | Server is under maintenance          |
+| `0x07` | Account is already in use            |
+| `0x08` | Server is full                       |
+| `0x09` | Server is under maintenance          |
+| `0x0A` | Login is currently prohibited        |
+| `0x0B` | Server is full (queue)               |
 
 **PlayFail reason codes** (§4.7):
 
