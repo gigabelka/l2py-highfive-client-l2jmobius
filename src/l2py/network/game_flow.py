@@ -204,25 +204,28 @@ class GameFlow:
 
             # Шаг 6: Получаем либо CharSelected (0x0B), либо сразу UserInfo (0x32).
             # SPECIFICATION §5.3.6 quirk: некоторые сборки пропускают CharSelected.
+            # L2JMobius CT2.6 перед CharSelected шлёт SSQInfo (0x73) и другие
+            # broadcast-пакеты — их нужно проглатывать, иначе закрытие канала → RST.
             logger.debug("Waiting for CharSelected or UserInfo...")
-            opcode, data = await conn.read_packet()
-            logger.debug(f"Received opcode=0x{opcode:02X}, len={len(data)}")
-
             user_info: UserInfoPacket | None = None
             session_id = selected_char.session_id
 
-            if opcode == CharSelectedPacket.opcode:
-                char_selected = CharSelectedPacket(data)
-                logger.debug(f"CharSelected: {char_selected.name}")
-                session_id = char_selected.session_id
-            elif opcode == UserInfoPacket.opcode:
-                logger.debug("Server skipped CharSelected, got UserInfo directly")
-                user_info = UserInfoPacket(data)
-            else:
-                raise GameError(
-                    f"Expected CharSelected (0x{CharSelectedPacket.opcode:02X}) "
-                    f"or UserInfo (0x{UserInfoPacket.opcode:02X}), "
-                    f"got 0x{opcode:02X}"
+            while True:
+                opcode, data = await conn.read_packet()
+                logger.debug(f"Received opcode=0x{opcode:02X}, len={len(data)}")
+
+                if opcode == CharSelectedPacket.opcode:
+                    char_selected = CharSelectedPacket(data)
+                    logger.debug(f"CharSelected: {char_selected.name}")
+                    session_id = char_selected.session_id
+                    break
+                if opcode == UserInfoPacket.opcode:
+                    logger.debug("Server skipped CharSelected, got UserInfo directly")
+                    user_info = UserInfoPacket(data)
+                    break
+                logger.debug(
+                    f"Skipping intermediate packet 0x{opcode:02X} "
+                    f"while waiting for CharSelected"
                 )
 
             # Шаг 7: RequestKeyMapping (обязателен по SPECIFICATION §5.3.7)
@@ -233,10 +236,21 @@ class GameFlow:
             logger.debug("Sending EnterWorld...")
             await conn.send_packet(EnterWorldPacket())
 
-            # Шаг 9: UserInfo, если ещё не получен
+            # Шаг 9: UserInfo, если ещё не получен. Перед ним сервер может
+            # прислать вспомогательные broadcast-пакеты (0xFE extended,
+            # ExStorageMaxCount 0x18 и т.п.) — проглатываем их.
             if user_info is None:
                 logger.debug("Waiting for UserInfo...")
-                user_info = await self._wait_for_packet(conn, UserInfoPacket)
+                while True:
+                    opcode, data = await conn.read_packet()
+                    logger.debug(f"Received opcode=0x{opcode:02X}, len={len(data)}")
+                    if opcode == UserInfoPacket.opcode:
+                        user_info = UserInfoPacket(data)
+                        break
+                    logger.debug(
+                        f"Skipping intermediate packet 0x{opcode:02X} "
+                        f"while waiting for UserInfo"
+                    )
 
             if user_info.character is None:
                 raise GameError("Failed to parse UserInfo")
