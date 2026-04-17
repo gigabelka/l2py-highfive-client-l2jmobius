@@ -7,7 +7,7 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from l2py.crypto.game_crypt import GameCrypt
 from l2py.models.character import CharacterInfo
@@ -17,12 +17,15 @@ from l2py.protocol.game.client_packets import (
     AuthLoginPacket,
     CharacterSelectPacket,
     EnterWorldPacket,
+    NetPingPacket,
     ProtocolVersionPacket,
+    RequestKeyMappingPacket,
 )
 from l2py.protocol.game.server_packets import (
     CharSelectedPacket,
     CharSelectionInfoPacket,
     KeyPacket,
+    NetPingRequestPacket,
     UserInfoPacket,
 )
 
@@ -51,6 +54,34 @@ class GameSession:
     connection: GameConnection
     character: CharacterInfo
     session_id: int
+    _reader_task: asyncio.Task | None = field(default=None, repr=False)
+
+    async def run_keepalive(self) -> None:
+        """Читает пакеты в цикле и отвечает на NetPingRequest.
+
+        Завершается при закрытии соединения. Предназначен для удержания
+        сессии «в игре» — без ответа на ping сервер разрывает соединение.
+        """
+        while True:
+            try:
+                opcode, data = await self.connection.read_packet()
+            except (ConnectionError, asyncio.IncompleteReadError):
+                logger.info("Game connection closed, stopping keepalive loop")
+                return
+
+            if opcode == NetPingRequestPacket.opcode:
+                ping = NetPingRequestPacket(data)
+                logger.debug(f"NetPingRequest pingId={ping.ping_id}")
+                try:
+                    await self.connection.send_packet(NetPingPacket(ping.ping_id))
+                except ConnectionError:
+                    logger.info("Game connection closed while answering ping")
+                    return
+            else:
+                logger.debug(
+                    f"Unhandled in-game packet: opcode=0x{opcode:02X}, "
+                    f"len={len(data)}"
+                )
 
 
 class GameFlow:
@@ -170,27 +201,42 @@ class GameFlow:
             # Шаг 5: Отправляем CharacterSelect
             logger.debug(f"Sending CharacterSelect (slot {self._char_slot})...")
             await conn.send_packet(CharacterSelectPacket(self._char_slot))
-            
-            # DEBUG: Проверим, не закрылся ли сокет
-            logger.debug(f"CharacterSelect sent, waiting for response...")
 
-            # Шаг 6: Получаем подтверждение
-            logger.debug("Waiting for CharSelected...")
-            # DEBUG: Прочитаем любой пакет и посмотрим что приходит
+            # Шаг 6: Получаем либо CharSelected (0x0B), либо сразу UserInfo (0x32).
+            # SPECIFICATION §5.3.6 quirk: некоторые сборки пропускают CharSelected.
+            logger.debug("Waiting for CharSelected or UserInfo...")
             opcode, data = await conn.read_packet()
-            logger.debug(f"DEBUG: Received opcode=0x{opcode:02X}, data={data.hex()[:50]}...")
-            if opcode != CharSelectedPacket.opcode:
-                raise GameError(f"Expected CharSelected (0x{CharSelectedPacket.opcode:02X}), got 0x{opcode:02X}")
-            char_selected = CharSelectedPacket(data)
-            logger.debug(f"CharSelected: {char_selected.name}")
+            logger.debug(f"Received opcode=0x{opcode:02X}, len={len(data)}")
 
-            # Шаг 7: Отправляем EnterWorld
+            user_info: UserInfoPacket | None = None
+            session_id = selected_char.session_id
+
+            if opcode == CharSelectedPacket.opcode:
+                char_selected = CharSelectedPacket(data)
+                logger.debug(f"CharSelected: {char_selected.name}")
+                session_id = char_selected.session_id
+            elif opcode == UserInfoPacket.opcode:
+                logger.debug("Server skipped CharSelected, got UserInfo directly")
+                user_info = UserInfoPacket(data)
+            else:
+                raise GameError(
+                    f"Expected CharSelected (0x{CharSelectedPacket.opcode:02X}) "
+                    f"or UserInfo (0x{UserInfoPacket.opcode:02X}), "
+                    f"got 0x{opcode:02X}"
+                )
+
+            # Шаг 7: RequestKeyMapping (обязателен по SPECIFICATION §5.3.7)
+            logger.debug("Sending RequestKeyMapping...")
+            await conn.send_packet(RequestKeyMappingPacket())
+
+            # Шаг 8: EnterWorld (104 нулевых байта)
             logger.debug("Sending EnterWorld...")
             await conn.send_packet(EnterWorldPacket())
 
-            # Шаг 8: Получаем UserInfo
-            logger.debug("Waiting for UserInfo...")
-            user_info = await self._wait_for_packet(conn, UserInfoPacket)
+            # Шаг 9: UserInfo, если ещё не получен
+            if user_info is None:
+                logger.debug("Waiting for UserInfo...")
+                user_info = await self._wait_for_packet(conn, UserInfoPacket)
 
             if user_info.character is None:
                 raise GameError("Failed to parse UserInfo")
@@ -204,7 +250,7 @@ class GameFlow:
             return GameSession(
                 connection=conn,
                 character=character,
-                session_id=char_selected.session_id,
+                session_id=session_id,
             )
 
         except Exception:

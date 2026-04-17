@@ -31,6 +31,14 @@ async def main() -> int:
         print(f"   Character: {session.character.name}")
         print(f"   Level: {session.character.level}")
         print(f"   Coordinates: ({session.character.x}, {session.character.y}, {session.character.z})")
+        print("   Holding session alive (Ctrl+C to exit)...")
+
+        try:
+            await session.run_keepalive()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            print("\n[OK] Interrupted, closing session.")
+        finally:
+            await session.connection.close()
         return 0
         
     except LoginError as e:

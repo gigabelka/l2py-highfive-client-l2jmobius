@@ -278,29 +278,56 @@ class UserInfoPacket(ServerPacket):
         super().__init__(data)
 
     def _read(self) -> None:
-        """Парсит поля пакета.
+        """Парсит начальные поля UserInfo по SPECIFICATION §5.3.9.
 
-        TODO: Допарсить оставшиеся поля для полной структуры UserInfo.
+        Полные поля (paperdoll, abnormal effects и т.д.) опускаются —
+        для состояния IN_GAME достаточно координат, имени и базовых атрибутов.
         """
-        # В High Five UserInfo имеет внутренний опкод
-        # inner_opcode = self._reader.read_byte()
-
-        # Парсим основные поля
-        # TODO: Реализовать полный парсинг для High Five
-
-        # Пока заглушка - парсим только имя
         try:
+            x = self._reader.read_int32()
+            y = self._reader.read_int32()
+            z = self._reader.read_int32()
+            self._reader.read_int32()  # vehicleId
+            object_id = self._reader.read_int32()
             name = self._reader.read_string()
+            race = self._reader.read_int32()
+            sex = self._reader.read_int32()
+            class_id = self._reader.read_int32()
+            level = self._reader.read_int32()
+
             self.character = CharacterInfo(
                 name=name,
-                race=0,
-                class_id=0,
-                level=0,
-                sex=0,
+                race=race,
+                class_id=class_id,
+                level=level,
+                sex=sex,
+                x=x,
+                y=y,
+                z=z,
+                object_id=object_id,
             )
         except Exception:
-            # Если не получилось распарсить - оставляем None
             pass
+
+
+class NetPingRequestPacket(ServerPacket):
+    """Запрос keep-alive от сервера (опкод 0xD3).
+
+    Клиент обязан ответить NetPing (0xA8) с тем же ping_id, иначе
+    сервер закроет соединение через ~60 секунд.
+    """
+
+    opcode: ClassVar[int] = 0xD3
+    __slots__ = ("ping_id",)
+
+    def __init__(self, data: bytes) -> None:
+        """Инициализация и парсинг пакета."""
+        self.ping_id: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        """Парсит поля пакета."""
+        self.ping_id = self._reader.read_int32()
 
 
 __all__ = [
@@ -308,4 +335,5 @@ __all__ = [
     "CharSelectionInfoPacket",
     "CharSelectedPacket",
     "UserInfoPacket",
+    "NetPingRequestPacket",
 ]

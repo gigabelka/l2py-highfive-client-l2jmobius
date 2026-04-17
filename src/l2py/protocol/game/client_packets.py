@@ -133,9 +133,49 @@ class EnterWorldPacket(ClientPacket):
     __slots__ = ()
 
     def _write(self) -> None:
+        """Записывает поля пакета.
+
+        L2J Mobius требует 104 нулевых байта после опкода (hardware info /
+        traceroute blob) — иначе BufferUnderflowException.
+        """
+        self._writer.write_bytes(b"\x00" * 104)
+
+
+class RequestKeyMappingPacket(ClientPacket):
+    """Запрос клиентского key mapping (расширенный опкод 0xD0 0x21).
+
+    Отправляется между CharSelected и EnterWorld — обязателен для L2JMobius.
+    """
+
+    opcode: ClassVar[int] = 0xD0
+    __slots__ = ()
+
+    def _write(self) -> None:
         """Записывает поля пакета."""
-        # Минимальный payload (8 нулей)
-        self._writer.write_bytes(b"\x00" * 8)
+        self._writer.write_uint16(0x0021)
+
+
+class NetPingPacket(ClientPacket):
+    """Ответ на NetPingRequest сервера (опкод 0xA8).
+
+    5-байтовая форма: opcode + echoed pingId.
+    """
+
+    opcode: ClassVar[int] = 0xA8
+    __slots__ = ("ping_id",)
+
+    def __init__(self, ping_id: int) -> None:
+        """Инициализация пакета.
+
+        Args:
+            ping_id: Идентификатор пинга из NetPingRequest.
+        """
+        self.ping_id = ping_id
+        super().__init__()
+
+    def _write(self) -> None:
+        """Записывает поля пакета."""
+        self._writer.write_int32(self.ping_id)
 
 
 __all__ = [
@@ -143,4 +183,6 @@ __all__ = [
     "AuthLoginPacket",
     "CharacterSelectPacket",
     "EnterWorldPacket",
+    "RequestKeyMappingPacket",
+    "NetPingPacket",
 ]
