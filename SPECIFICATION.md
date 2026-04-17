@@ -1,4 +1,4 @@
-# Lineage 2 HighFive — Client ↔ Server Protocol Specification
+# Lineage 2 HighFive — Client ↔ Server Protocol Specification (Consolidated)
 
 **Chronicle:** HighFive
 **Protocol version:** `273` (also valid: `267`, `268`, `271` — same wire format)
@@ -6,6 +6,8 @@
 **Scope:** this document describes the complete wire protocol used between a game client and the two servers it talks to (the Login Server and the Game Server), plus the exact sequence of packets needed to automatically log in and enter the world as a character. It is language-agnostic and is intended to let another developer (or another LLM) re-implement a working client in any language.
 
 File paths are cited only for cross-checking; the spec itself does not depend on any language feature or library beyond "raw TCP socket", "RSA (no padding)", and "Blowfish ECB".
+
+> **Note on this consolidated spec.** This document is the result of merging two earlier specifications and verifying them against a real, working packet capture of a successful login + enter-world session. All points where the two source specs disagreed have been resolved in favor of what was actually observed on the wire. Places where the wire capture revealed fields neither source spec documented are marked as **"Observed on the wire"** so that a reimplementer knows to send them too.
 
 ---
 
@@ -339,6 +341,17 @@ Round-trip: running the S→C decrypt (§3.7) on `ciphertext` with `key (before)
 ---
 
 ## 4. Login Server protocol
+
+> **Important — body sizes on the Login channel.** The body-size numbers quoted in the tables of §§4.10–4.13 ("145 bytes", "21 bytes", "10 bytes", …) describe the **minimum field set** the server reads before dispatch. In the reference packet capture, the **actually encrypted sizes on the wire are larger** than those numbers imply: `RequestGGAuth` → 40 enc bytes, `RequestAuthLogin` → 192 enc bytes, `RequestServerList` → 32 enc bytes, `RequestServerLogin` → 32 enc bytes. Working back through the §3.6 padding pipeline, the real bodies the reference client sends are in the ranges:
+>
+> | Packet               | Spec table says | Observed body (pre-encryption) |
+> | -------------------- | --------------- | ------------------------------ |
+> | `RequestGGAuth`      | 21              | **25–32 bytes**                |
+> | `RequestAuthLogin`   | 145             | **181–188 bytes**              |
+> | `RequestServerList`  | 10              | **17–20 bytes**                |
+> | `RequestServerLogin` | 10              | **17–20 bytes**                |
+>
+> The extra bytes are zero-padded trailers that L2J Mobius does not validate. A reimplementer has two equally valid options: (a) send the minimum field set from the tables below and rely on the §3.6 pipeline to pad out to the server-expected block size, or (b) pad each body with zeros to match the reference capture's byte count before running encryption. The reference client does (b); L2J Mobius accepts both.
 
 ### 4.1 State machine
 
@@ -715,10 +728,15 @@ Every multi-byte field below is little-endian. Opcodes are the first byte of the
 
 #### 5.3.1 ProtocolVersion (C→S, opcode `0x0E`) — plaintext
 
-| Offset | Field      | Type  | Value  |
-| ------ | ---------- | ----- | ------ |
-| 0      | opcode     | `u8`  | `0x0E` |
-| 1      | `protocol` | `i32` | `273`  |
+| Offset | Field      | Type        | Value                                                              |
+| ------ | ---------- | ----------- | ------------------------------------------------------------------ |
+| 0      | opcode     | `u8`        | `0x0E`                                                             |
+| 1      | `protocol` | `i32`       | `273`                                                              |
+| 5      | `hwBlob`   | `bytes[260]`| **Observed on the wire**: opaque hardware/environment identifiers  |
+
+**Observed on the wire (body = 265 bytes, not 5).** The reference HighFive client appends a 260-byte blob immediately after the `i32 protocol` field. The blob carries obfuscated hardware IDs (MAC, HDD serial, Windows key, etc.) and is required by L2J Mobius HighFive even though the server only reads `protocol` for version-compatibility. Sending just 5 bytes (opcode + `i32`) is **not** enough — the server expects the full 265-byte body and will close the connection otherwise.
+
+A reimplementer can either (a) capture the blob from one real client run and replay it verbatim, or (b) send 260 bytes of any pseudo-random-looking content — L2J Mobius only checks that the field is present, not its contents.
 
 #### 5.3.2 CryptInit (S→C, opcode `0x2E`) — plaintext
 
@@ -744,16 +762,19 @@ The reference client passes `encryptionFlag` directly into its crypt layer (`thi
 
 #### 5.3.3 AuthRequest (C→S, opcode `0x2B`) — first packet after CryptInit (encrypted iff `CryptInit.encryptionFlag ≠ 0`)
 
-| Offset | Field        | Type  | Notes                            |
-| ------ | ------------ | ----- | -------------------------------- |
-| 0      | opcode       | `u8`  | `0x2B`                           |
-| 1      | `username`   | `str` | UTF-16LE, 2-byte null terminator |
-| var    | `playOkId2`  | `i32` | **note the swapped order**       |
-| var+4  | `playOkId1`  | `i32` |                                  |
-| var+8  | `loginOkId1` | `i32` |                                  |
-| var+12 | `loginOkId2` | `i32` |                                  |
+| Offset  | Field        | Type        | Notes                                        |
+| ------- | ------------ | ----------- | -------------------------------------------- |
+| 0       | opcode       | `u8`        | `0x2B`                                       |
+| 1       | `username`   | `str`       | UTF-16LE, 2-byte null terminator             |
+| var     | `playOkId2`  | `i32`       | **note the swapped order**                   |
+| var+4   | `playOkId1`  | `i32`       |                                              |
+| var+8   | `loginOkId1` | `i32`       |                                              |
+| var+12  | `loginOkId2` | `i32`       |                                              |
+| var+16  | trailer      | `bytes[16]` | **Observed on the wire** — see note below    |
 
 **The field order `play2, play1, login1, login2` is mandatory** — getting it wrong silently breaks auth on L2J Mobius.
+
+**Observed on the wire.** Immediately after `loginOkId2` the reference client appends 16 more bytes of trailing data (e.g. `01 00 00 00  00 15 02 00  00 00 00 00  00 00 00 00` in the reference capture). L2J Mobius reads them as three `i32` fields (client flags / system language / reserved) but does not validate their contents. A reimplementer can copy any captured blob or send 16 zero bytes — both work. Omitting them will cause the server's byte-based dispatcher to under-read the next field and disconnect.
 
 #### 5.3.4 CharSelectionInfo (S→C, opcode `0x09`)
 
@@ -833,16 +854,31 @@ Confirmation that the selected character was loaded. The body beyond the opcode 
 
 This is the canonical "extended packet" form used by L2 from Interlude onwards: a 1-byte primary opcode (`0xD0`) followed by a 2-byte LE sub-opcode.
 
+**Observed on the wire — the client sends THREE extended packets before EnterWorld, not just RequestKeyMapping.** The reference capture shows a single TCP segment carrying three back-to-back 5-byte packets:
+
+```
+05 00 | d0 01 00     ; extended 0xD0 0x0001 (unknown, likely client-environment ping)
+05 00 | d0 3d 00     ; extended 0xD0 0x003D (unknown)
+05 00 | d0 21 00     ; extended 0xD0 0x0021 (RequestKeyMapping)
+```
+
+L2J Mobius CT 2.6 HighFive does not strictly require all three — RequestKeyMapping alone is enough to proceed to EnterWorld — but the reference client sends all three in one flush. A reimplementer targeting maximum compatibility should send the same triplet; a minimal client may send only `0xD0 0x0021`.
+
 #### 5.3.8 EnterWorld (C→S, opcode `0x11`)
 
-Total body size: **105 bytes** (1 opcode + 104 zero pad).
+Total body size: **105 bytes** (1 opcode + 104 trailing bytes).
 
-| Offset | Field   | Type         | Value     |
-| ------ | ------- | ------------ | --------- |
-| 0      | opcode  | `u8`         | `0x11`    |
-| 1      | padding | `bytes[104]` | all zeros |
+| Offset | Field     | Type         | Value              |
+| ------ | --------- | ------------ | ------------------ |
+| 0      | opcode    | `u8`         | `0x11`             |
+| 1      | `trailer` | `bytes[104]` | see note below     |
 
-**The 104 zero bytes are mandatory on L2J Mobius** — the server parses them as hardware info / traceroute blob and will throw `BufferUnderflowException` otherwise.
+**The 104 trailing bytes are mandatory on L2J Mobius** — the server parses them as a hardware-info / traceroute blob and will throw `BufferUnderflowException` if fewer are supplied. Their *contents*, however, are not validated:
+
+- **"All zeros"** is accepted and is the simplest option for a reimplementer.
+- **Observed on the wire** the reference client fills the trailer with real network-adapter data. In the reference capture, bytes 80..95 of the trailer contain the machine's actual LAN interface IPs in 4-byte form (`ac 13 b0 01` = `172.19.176.1`, `ac 10 1a 01` = `172.16.26.1`, `ac 10 0a 01` = `172.16.10.1`, `0a 00 05 02` = `10.0.5.2`), followed by a short hash/signature. This is the client's "adapter fingerprint" used by official NCSoft infrastructure; Mobius neither needs it nor inspects it.
+
+A reimplementer may therefore send 104 zero bytes and be done.
 
 #### 5.3.9 UserInfo (S→C, opcode `0x32`)
 
@@ -988,14 +1024,14 @@ Client                 Login Server                     Game Server
   |                         |                                 |
   |--------------- TCP connect ---------------------->|       |
   |                                                   |       |
-  |--- ProtocolVersion (0x0E, plaintext) ------------>|       |
-  |<-- CryptInit (0x2E, plaintext) --------------------|       |
-  |--- AuthRequest (0x2B, encrypted) ---------------->|       |
-  |<-- CharSelectionInfo (0x09) -----------------------|       |
+  |--- ProtocolVersion (0x0E + 260-byte hwBlob) ----->|       |
+  |<-- CryptInit (0x2E, 23 bytes, plaintext) ----------|       |
+  |--- AuthRequest (0x2B + 16-byte trailer) --------->|       |
+  |<-- CharSelectionInfo (0x09, 10-byte header) -------|       |
   |--- CharacterSelected (0x12, slot=charSlot) ------>|       |
   |<-- CharSelected (0x0B)  OR  UserInfo (0x32) ------|       |
-  |--- RequestKeyMapping (0xD0 0x21) ---------------->|       |
-  |--- EnterWorld (0x11, 104 zero bytes) ------------>|       |
+  |--- Ext 0xD0 0x0001 + 0xD0 0x003D + 0xD0 0x0021 -->|       |
+  |--- EnterWorld (0x11 + 104 trailing bytes) ------->|       |
   |<-- UserInfo (0x32) --------------------------------|       |
   |                                                   |       |
   |======= IN_GAME =========================================|
@@ -1083,43 +1119,54 @@ tcp_close(loginSock)
 # ---- Phase 2: Game Server ----
 gameSock = tcp_connect(chosen.ip, chosen.port)
 
-# Plaintext ProtocolVersion (0x0E)
-send_framed(gameSock, bytes([0x0E]) + i32_le(273))
+# Plaintext ProtocolVersion (0x0E) — MUST include the 260-byte hw blob.
+# The easiest implementation captures the blob from a real client run and replays
+# it verbatim; any 260-byte sequence is accepted by L2J Mobius.
+hwBlob = HARDWARE_BLOB_FROM_REFERENCE_CAPTURE   # 260 bytes, opaque
+send_framed(gameSock, bytes([0x0E]) + i32_le(273) + hwBlob)
 
-# Plaintext CryptInit (0x2E), exactly 23 bytes of body
+# Plaintext CryptInit (0x2E), exactly 23 bytes of body.
 pkt = read_framed(gameSock)
 body = pkt.body
 assert body[0] == 0x2E and body[1] == 0x01
-xorKey        = body[2:10]
-encryptionOn  = u32_le(body[10:14]) != 0
-staticTail    = bytes([0xC8, 0x27, 0x93, 0x01, 0xA1, 0x6C, 0x31, 0x97])
+xorKey         = body[2:10]
+encryptionOn   = u32_le(body[10:14]) != 0
+# body[14:18] = serverId (i32), body[18] = obfuscationFlag, body[19:23] = obfuscationKey
+staticTail     = bytes([0xC8, 0x27, 0x93, 0x01, 0xA1, 0x6C, 0x31, 0x97])
 key_cs = xorKey + staticTail        # 16 bytes
 key_sc = xorKey + staticTail
-# from now on, encrypt/decrypt with §3.7
+# from now on, encrypt/decrypt with §3.7 (no-op if encryptionOn == False)
 
-# AuthRequest (0x2B) — first post-CryptInit packet. Encrypted iff encryptionOn;
-# L2J Mobius HighFive sends encryptionFlag = 0, so this stays plaintext.
+# AuthRequest (0x2B) — first post-CryptInit packet. Plaintext on Mobius HighFive.
+# Trailing 16 zero bytes are mandatory on the wire.
 nameUtf16 = utf16le(username) + bytes([0x00, 0x00])
 body = bytes([0x2B]) + nameUtf16
      + i32_le(playOkId2) + i32_le(playOkId1)    # SWAPPED ORDER!
      + i32_le(loginOkId1) + i32_le(loginOkId2)
+     + zeros(16)                                # trailer (§5.3.3)
 send_game_encrypted(gameSock, body, key_cs)
 
-# CharSelectionInfo (0x09)
+# CharSelectionInfo (0x09) — header is opcode + charCount(i32) + maxChars(i32) + reserved(u8)
 pkt = read_framed(gameSock); body = decrypt_game(pkt.body, key_sc)
 assert body[0] == 0x09
-# charCount = u32_le(body[1:5]); per-character records are not needed here.
+charCount = i32_le(body[1:5])
+maxChars  = i32_le(body[5:9])
+# body[9]  = reserved u8; body[10..] = per-character records (not needed for auto-login)
 
-# CharacterSelected (0x12, slot = charSlot) + 14 zero bytes
+# CharacterSelected (0x12) = opcode + slotIndex(i32) + i16(0) + 3*i32(0) = 19 bytes
 body = bytes([0x12]) + i32_le(charSlot) + zeros(14)
 send_game_encrypted(gameSock, body, key_cs)
 
-# Either CharSelected (0x0B) or UserInfo (0x32) directly
+# Either CharSelected (0x0B) or UserInfo (0x32) directly.
 pkt = read_framed(gameSock); body = decrypt_game(pkt.body, key_sc)
 if body[0] == 0x0B:
-    # RequestKeyMapping (0xD0 0x21)
+    # Send the three extended packets the reference client flushes in one segment.
+    # Only 0xD0 0x0021 (RequestKeyMapping) is strictly required; the other two
+    # are sent for maximum compatibility.
+    send_game_encrypted(gameSock, bytes([0xD0]) + u16_le(0x0001), key_cs)
+    send_game_encrypted(gameSock, bytes([0xD0]) + u16_le(0x003D), key_cs)
     send_game_encrypted(gameSock, bytes([0xD0]) + u16_le(0x0021), key_cs)
-    # EnterWorld (0x11) + 104 zero bytes
+    # EnterWorld (0x11) + 104 trailing bytes (zeros are accepted).
     send_game_encrypted(gameSock, bytes([0x11]) + zeros(104), key_cs)
     pkt = read_framed(gameSock); body = decrypt_game(pkt.body, key_sc)
 
@@ -1173,21 +1220,24 @@ Use this list when porting to a new language. Tick every box to have a working a
 - [ ] Static login Blowfish key `6B 60 CB 5B 82 CE 90 B1 CC 2B 6C 55 6C 6C 6C 6C`.
 - [ ] Init packet decryption = Blowfish(static) + rolling XOR reverse + drop trailing 8 bytes.
 - [ ] Per-packet NewCrypt XOR checksum (compute on send, verify on recv) over 4-byte DWORDs with last 4 bytes holding the result.
-- [ ] Login-packet padding: 4-byte align → +8 zeros → 8-byte align → write checksum → Blowfish encrypt.
+- [ ] Login-packet padding pipeline (§3.6) — single-step formula or equivalent "pad-to-4 / +8 / pad-to-8" yields the same result.
 - [ ] RSA modulus unscrambler (C^-1, B^-1, A^-1, D^-1 in that order).
 - [ ] RSA-1024 encryption with `RSA_NO_PADDING`, exponent 65537, 128-byte plaintext layout (94 / 14 login / 2 / 16 password / 2).
 - [ ] Login state machine with all 7 packets (§4.3 — §4.13).
-- [ ] ServerList parsing with 21-byte records (§4.6).
+- [ ] ServerList parsing with **23-byte records** per §4.6 (the first 16 bytes are structured; the trailing 7 bytes are opaque and may differ across Mobius builds).
+- [ ] CharSelectionInfo header = `opcode + charCount(i32) + maxChars(i32) + reserved(u8)` (**10-byte header**, §5.3.4). Do NOT assume the spec-1-style 5-byte header.
 - [ ] Transition to Game Server using `gameServerIp:gameServerPort` from the matched ServerList record.
-- [ ] Game packet framing same as login; XOR cipher only after CryptInit.
+- [ ] Game packet framing same as login; XOR cipher only after CryptInit and only if `encryptionFlag ≠ 0`.
 - [ ] Static game XOR tail `C8 27 93 01 A1 6C 31 97`.
 - [ ] Stream-cipher chaining: `out[i] = src[i] ^ key[i&15] ^ prev`; on send `prev = out[i]`, on recv `prev = encrypted[i]`.
 - [ ] Key rotation after every packet: `key[8..12] += packetSize` (LE DWORD).
-- [ ] ProtocolVersion (0x0E) with `i32 273`, plaintext.
-- [ ] AuthRequest (0x2B): username UTF-16LE + null, then **playOkId2, playOkId1, loginOkId1, loginOkId2** in that order.
-- [ ] CharacterSelected (0x12): `i32 slotIndex` + 14 zero bytes.
+- [ ] **ProtocolVersion (0x0E) with `i32 273` PLUS 260-byte hardware blob** (§5.3.1). Sending only 5 bytes is rejected by Mobius.
+- [ ] CryptInit (0x2E) parsed as opcode + result + xorKey(8) + encryptionFlag(u32) + serverId(i32) + obfuscationFlag(u8) + obfuscationKey(i32) = **23 bytes** (§5.3.2).
+- [ ] AuthRequest (0x2B): username UTF-16LE + null, then **playOkId2, playOkId1, loginOkId1, loginOkId2** in that order, **plus 16 trailing bytes** (§5.3.3). The trailer can be zeros.
+- [ ] CharacterSelected (0x12): `i32 slotIndex` + `i16 + i32 + i32 + i32` (= 14 zero bytes in total, but the server reads them as those four typed fields — §5.3.5).
 - [ ] Accept UserInfo (0x32) directly in `WAIT_CHAR_SELECTED` state as an implicit confirmation.
-- [ ] RequestKeyMapping extended packet `0xD0 0x21` followed by EnterWorld (0x11) + 104 zero bytes.
+- [ ] **Send three extended packets before EnterWorld**: `0xD0 0x0001`, `0xD0 0x003D`, `0xD0 0x0021` (§5.3.7). Only `0xD0 0x0021` is strictly required, but the reference client flushes all three in one TCP segment.
+- [ ] EnterWorld (0x11) + 104 trailing bytes (zeros OR a hardware/adapter blob — server accepts either) (§5.3.8).
 - [ ] Reach IN_GAME upon receiving UserInfo (0x32); parse at least the initial fields (x, y, z, objectId, name, level, HP/MP).
 - [ ] NetPing (0xA8) answer to every NetPingRequest (0xD3) with a **5-byte body** = `u8 0xA8 + i32 pingId`. The legacy 13-byte form (`+ 0x00000000 + 0x00080000`) is optional.
 - [ ] Handle the overloaded `0x14` opcode correctly on C→S: 5-byte body = UseItem, 1-byte body = RequestItemList.
@@ -1209,8 +1259,11 @@ Use this list when porting to a new language. Tick every box to have a working a
 | RequestAuthLogin trailing         | `loginOkId1 (i32) + loginOkId2 (i32) + 8 zero bytes` (all zeros on first login) | §4.10   |
 | RSA plaintext layout              | 94 zero / 14 login / 2 zero / 16 password / 2 zero = 128 bytes | §3.4                     |
 | RSA public exponent               | `65537` (`0x10001`)                                            | §3.4                     |
-| CharacterSelected padding         | 14 zero bytes after `slotIndex` (`i16 + i32 + i32 + i32`)      | §5.3.5                   |
-| EnterWorld padding                | 104 zero bytes after opcode                                    | §5.3.8                   |
+| CharacterSelected trailer         | `i16 + i32 + i32 + i32` = 14 zero bytes after `slotIndex` | §5.3.5                   |
+| EnterWorld trailer                | 104 bytes after opcode (zeros OR adapter blob) | §5.3.8                   |
+| ProtocolVersion hwBlob            | 260 bytes after `i32 protocol` (opaque, mandatory) | §5.3.1                   |
+| AuthRequest trailer               | 16 zero bytes after `loginOkId2`               | §5.3.3                   |
+| Pre-EnterWorld extended triplet   | `0xD0 0x0001`, `0xD0 0x003D`, `0xD0 0x0021`    | §5.3.7                   |
 | NetPing observed wire form        | opcode + `i32 pingId` (5-byte body)                            | §5.4.2                   |
 | NetPing legacy trailing constants | `0x00000000`, `0x00080000` (optional)                          | §5.4.2                   |
 | Maximum packet length             | `0xFFFF` (= 65 533-byte body)                                  | §2.3                     |
