@@ -2,10 +2,9 @@
 
 **Chronicle:** HighFive
 **Protocol version:** `273` (also valid: `267`, `268`, `271` — same wire format)
-**Server flavor:** L2J Mobius (CT 2.6 HighFive)
-**Scope:** this document describes the complete wire protocol used between a game client and the two servers it talks to (the Login Server and the Game Server). The automatic login sequence is described separately in [AUTOLOGIN.md](AUTOLOGIN.md); cryptographic primitives are described in [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md). Extracted verbatim from the historical [SPECIFICATION.md](../SPECIFICATION.md).
+**Scope:** this document describes the complete wire protocol used between a game client and the two servers it talks to (the Login Server and the Game Server). The automatic login sequence is described separately in [AUTOLOGIN.md](AUTOLOGIN.md); cryptographic primitives are described in [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md); constants and opcode tables in [CONSTANTS.md](CONSTANTS.md).
 
-Server-side file paths (e.g. `*.java`) are cited only for cross-checking against the L2J Mobius CT 2.6 source tree; the spec itself does not depend on any language feature or library beyond "raw TCP socket", "RSA (no padding)", and "Blowfish ECB".
+The spec depends on no language feature or library beyond "raw TCP socket", "RSA (no padding)", and "Blowfish ECB".
 
 ---
 
@@ -17,7 +16,7 @@ A Lineage 2 session has two independent TCP connections, executed strictly in se
 
 2. **Game phase** — client connects to the selected Game Server on the IP/port returned by the Login Server's ServerList. The client performs a handshake, identifies itself using the 4 session tokens obtained in phase 1, picks a character by slot number, and sends an EnterWorld packet. The server replies with a UserInfo packet which places the character in the world. From that point the connection is long-lived: the server streams world events, the client sends gameplay commands, and both sides periodically exchange keepalive pings.
 
-Whether the game-phase connection is actually encrypted is decided **at runtime by the server**, through the `encryptionFlag` field of the CryptInit packet (see [Game XOR stream cipher](CRYPTOGRAPHY.md#game-xor-stream-cipher) and [CryptInit](#crypt-init-s-c-opcode-0x2e--plaintext)). L2J Mobius CT 2.6 HighFive leaves this flag at `0`, so a compliant client must be prepared for the entire game session to stay plaintext even though the XOR cipher infrastructure is in place.
+Whether the game-phase connection is actually encrypted is decided **at runtime by the server**, through the `encryptionFlag` field of the CryptInit packet (see [Game XOR stream cipher](CRYPTOGRAPHY.md#game-xor-stream-cipher) and [CryptInit](#crypt-init-s-c-opcode-0x2e--plaintext)). On HighFive the server leaves this flag at `0`, so a compliant client must be prepared for the entire game session to stay plaintext even though the XOR cipher infrastructure is in place.
 
 ```
   +--------+        +--------------+        +-------------+
@@ -66,7 +65,7 @@ The two exceptions are:
 
 Notes on `str`:
 
-- The encoding is pure **UTF-16LE** with **no byte-order mark** (BOM). Each code unit is 2 bytes little-endian. Characters outside the BMP are encoded as UTF-16 surrogate pairs (4 bytes total); L2J Mobius treats them as opaque code units, so a client only needs to preserve them byte-for-byte.
+- The encoding is pure **UTF-16LE** with **no byte-order mark** (BOM). Each code unit is 2 bytes little-endian. Characters outside the BMP are encoded as UTF-16 surrogate pairs (4 bytes total); the server treats them as opaque code units, so a client only needs to preserve them byte-for-byte.
 - The terminator is exactly **two `0x00` bytes** immediately after the last code unit. It is counted in the field's on-wire length but not in the string's character count.
 - An **empty string** encodes as just `00 00` (two bytes total).
 - A reader that encounters unterminated data must treat the packet as malformed.
@@ -171,7 +170,7 @@ that hold the rolling-XOR seed and 4 unused bytes — see [NewCrypt rolling XOR 
 | 153    | `blowfishKey`      | `bytes[16]`  | 16   | session key for every subsequent login packet, both directions             |
 | 169    | null terminator    | `u8`         | 1    | `0x00` written by the server                                               |
 
-Total server-written payload: **170 bytes** (`Init.java:62-77`). On the wire
+Total server-written payload: **170 bytes**. On the wire
 the packet is longer because the login crypto pipeline appends a rolling-XOR
 seed (4 bytes), 4 unused bytes, and zero-pads to a Blowfish 8-byte block —
 bringing the post-decrypt buffer to **184 bytes**. After `decXORPass` and
@@ -216,7 +215,7 @@ Codes outside this set are logged as `Unknown reason (0x…)` and treated as fat
 | 21     | reserved       | `i32`       | `writeInt(0)`                                        |
 | 25     | reserved       | `bytes[16]` | `writeBytes(new byte[16])`                           |
 
-Total server-written payload: **41 bytes** (`LoginOk.java:54-64`). The wire
+Total server-written payload: **41 bytes**. The wire
 body is longer because of login-packet padding (see [Login packet encryption pipelines](CRYPTOGRAPHY.md#login-packet-encryption-pipelines)) — expect ~56 bytes on
 the wire after Blowfish padding, NewCrypt checksum etc. A reimplementer
 only needs to keep `loginOkId1` and `loginOkId2`; everything from offset 9
@@ -250,7 +249,7 @@ onward is opaque and may be skipped.
 A typical 1-server response (40-byte body) shows a 16-byte trailing block
 after the single record:
 `00 00 01 02 01 00 3e 2d 03 e0 67 16 7f 24 1c 0d`. This block holds the
-per-server character count summary and various L2J Mobius account flags.
+per-server character count summary and various account flags.
 A reimplementer doing auto-login can ignore everything after the matched
 server record — the client selects the record whose `serverId` matches
 the configured `ServerId` and uses its `ip:port` for the Game Server
@@ -271,7 +270,7 @@ Reason codes:
 | `0x04` | Access error, try later |
 | `0x0F` | Too many players        |
 
-Codes outside this set are logged as `Unknown reason (0x…)`. The legacy Interlude-era table (`0x01` = server full, `0x02` = server down, etc.) is **not** what L2J Mobius sends — a reimplementer must not hard-code it.
+Codes outside this set are logged as `Unknown reason (0x…)`. The legacy Interlude-era table (`0x01` = server full, `0x02` = server down, etc.) is **not** what HighFive sends — a reimplementer must not hard-code it.
 
 ### PlayOk (S→C, opcode `0x07`)
 
@@ -281,7 +280,7 @@ Codes outside this set are logged as `Unknown reason (0x…)`. The legacy Interl
 | 1      | `playOkId1`    | `i32`       | session token #3                                   |
 | 5      | `playOkId2`    | `i32`       | session token #4                                   |
 
-Total server-written payload: **9 bytes** (`PlayOk.java:41-44`). The wire
+Total server-written payload: **9 bytes**. The wire
 body is longer because of login-packet padding (see [Login packet encryption pipelines](CRYPTOGRAPHY.md#login-packet-encryption-pipelines)); the extra bytes are
 crypto padding, not packet fields. Both tokens must be remembered — they
 are sent later in the game AuthRequest.
@@ -294,11 +293,11 @@ are sent later in the game AuthRequest.
 | 1      | `ggAuthResponse` | `i32`       | echoes the `sessionId` from Init                     |
 | 5      | reserved         | `bytes[16]` | four `writeInt(0)` calls                             |
 
-Total server-written payload: **21 bytes** (`GGAuth.java:41-47`). The wire
+Total server-written payload: **21 bytes**. The wire
 body is longer because of login-packet padding (see [Login packet encryption pipelines](CRYPTOGRAPHY.md#login-packet-encryption-pipelines)); there is **no**
 GameGuard nonce — the extra bytes on the wire are crypto padding.
-`ggAuthResponse == sessionId` on every L2J Mobius CT 2.6 capture — the
-reference Java server simply rewrites the first i32 of GGAuth to the
+`ggAuthResponse == sessionId` on every HighFive capture — the
+server simply rewrites the first i32 of GGAuth to the
 sessionId. A reimplementer can therefore treat `ggAuthResponse` as a
 "keep-alive ack" and only needs the i32 itself.
 
@@ -322,13 +321,13 @@ prefix = 194 bytes on the wire.
 
 The 128-byte RSA ciphertext is computed per [RSA-1024 for credential submission](CRYPTOGRAPHY.md#rsa-1024-for-credential-submission) from the login, password,
 and the unscrambled modulus from Init. The trailing 55 bytes after the
-ciphertext are GameGuard-related — L2J Mobius CT 2.6 does not validate
+ciphertext are GameGuard-related — HighFive does not validate
 them and accepts an all-zero blob, so a reimplementer that does not need
 to defeat real GameGuard may transmit zeros for everything from offset 129
 onward.
 
 **Alternative "new auth" mode (optional on the server).**
-`RequestAuthLogin.java` supports a `newAuthMethod` branch that expects
+The server supports a `newAuthMethod` branch that expects
 **two** 128-byte RSA ciphertexts concatenated (256 bytes total) with this
 plaintext layout across the decrypted 256-byte buffer:
 
@@ -339,8 +338,7 @@ plaintext layout across the decrypted 256-byte buffer:
 | `0xDC`    | 16   | password, ASCII null-padded     |
 
 The effective login is `trim(part1) + trim(part2)`. This mode is enabled
-via server configuration (L2J Mobius admin flag); the official CT 2.6
-HighFive distribution leaves it **disabled**, so the single-block form
+via a server admin flag; HighFive leaves it **disabled** by default, so the single-block form
 described above is what real servers accept. A reimplementer only needs
 the dual-block form if they integrate with a server that explicitly opts
 into new-auth.
@@ -368,7 +366,7 @@ Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 | 16     | GG checksum    | `i32`        | per-session GameGuard tag (observed `0x5E400B0F`) |
 | 20     | reserved       | `bytes[4]`   | observed all-zero                                  |
 
-The trailing 14 bytes (offsets 10..23) are GameGuard padding. L2J Mobius
+The trailing 14 bytes (offsets 10..23) are GameGuard padding. The server
 accepts a 10-byte body (just opcode+ids+serverId) as well, which is the
 recommended minimal form for a reimplementer.
 
@@ -383,8 +381,8 @@ Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 | 5      | `loginOkId2`   | `i32`        | from LoginOk                                       |
 | 9      | trailing block | `bytes[15]`  | observed `0x05`, 6 zeros, GG tag i32, 4 zeros     |
 
-L2J Mobius only reads the two i32 session tokens (`RequestServerList.java`
-calls `remaining() >= 8` and reads two ints), so everything from offset 9
+The server only reads the two i32 session tokens (it checks `remaining() >= 8`
+and reads two ints), so everything from offset 9
 onward is ignored by the server. The server accepts a **9-byte body**
 (`opcode + loginOkId1 + loginOkId2`), which is the recommended minimal
 form. The `0x05` byte at offset 9 observed on wire from the official
@@ -405,7 +403,7 @@ Body size: **32 bytes** (before padding/encryption). Wire = 42 bytes.
 The 4-byte "GG client tag" at offset 24 is computed by the official
 client's GameGuard module from the `sessionId`. A sample observed value
 was `0xA000C01D` for `sessionId = 0x1AA000C0` (sessionId rotated
-right one byte and the high byte XOR'd with `0x07`). L2J Mobius CT 2.6
+right one byte and the high byte XOR'd with `0x07`). HighFive
 does not validate this tag and accepts an all-zero blob, so a
 reimplementer that does not need to defeat real GameGuard may transmit a
 21-byte body with just `opcode + sessionId + 16 zero bytes`.
@@ -488,7 +486,7 @@ F0 DE BC 9A                                      ; playOkId2 = 0x9ABCDEF0
 <7 trailing bytes — opaque GG/queue data>        ; offsets 0x09..0x0F
 ```
 
-**PlayFail (S→C, `0x06`) — 2 bytes** (see [PlayFail](#playfail-s-c-opcode-0x06)). L2J Mobius writes the reason as a single byte via `writeByte(reason.getCode())`.
+**PlayFail (S→C, `0x06`) — 2 bytes** (see [PlayFail](#playfail-s-c-opcode-0x06)). The server writes the reason as a single byte.
 
 ```
 06                                               ; opcode = 0x06
@@ -607,7 +605,7 @@ Every multi-byte field below is little-endian. Opcodes are the first byte of the
 | 1      | `protocol`     | `i32`        | `273`  |
 | 5      | trailing block | `bytes[260]` | client build-info / hardware fingerprint, opaque |
 
-L2J Mobius CT 2.6 only consumes the first 5 bytes. The official client
+HighFive only consumes the first 5 bytes. The official client
 nonetheless sends a 265-byte body (267 bytes on the wire). A reimplementer may transmit only the 5-byte minimum form
 and the server will accept it.
 
@@ -625,7 +623,7 @@ and the server will accept it.
 
 After receiving CryptInit, the client builds `key_cs` and `key_sc` as `xorKey || staticTail` (see [Game XOR stream cipher](CRYPTOGRAPHY.md#game-xor-stream-cipher)) and enables encryption according to `encryptionFlag`.
 
-**L2J Mobius CT 2.6 HighFive quirk:** the server sends `encryptionFlag = 0`, which disables the XOR stream cipher for the entire session — every subsequent packet (including AuthRequest) travels as plaintext. A correct client must honor this flag and only apply the XOR cipher when it is non-zero.
+**HighFive quirk:** the server sends `encryptionFlag = 0`, which disables the XOR stream cipher for the entire session — every subsequent packet (including AuthRequest) travels as plaintext. A correct client must honor this flag and only apply the XOR cipher when it is non-zero.
 
 A clean way to structure the crypt layer is to pass `encryptionFlag` into an `initKey(xorKeyData, useEncryption)` method and have `encrypt`/`decrypt` short-circuit to the identity function when `useEncryption = false`. In other words, a reimplementer is not required to special-case "encryption disabled" in the packet dispatcher — a no-op crypt object is the cleanest factoring.
 
@@ -642,9 +640,9 @@ A clean way to structure the crypt layer is to pass `encryptionFlag` into an `in
 | var+16 | trailing block | `bytes[16]` | observed `01 00 00 00 15 02 00 00 00 …` (opaque) |
 
 **The field order `play2, play1, login1, login2` is mandatory** — getting
-it wrong silently breaks auth on L2J Mobius. The 16-byte trailing block
+it wrong silently breaks auth. The 16-byte trailing block
 is sent by the official client (observed as a 49-byte body for
-`username = "qwerty"`); L2J Mobius does not read past
+`username = "qwerty"`); the server does not read past
 `loginOkId2`, so a reimplementer may omit the trailer entirely.
 
 #### CharSelectionInfo (S→C, opcode `0x09`)
@@ -655,7 +653,7 @@ is sent by the official client (observed as a 49-byte body for
 | 1      | `charCount`       | `u32`         |
 | 5      | character records | variable      |
 
-The auto-login algorithm does not need to parse character records; it simply picks `CONFIG.CharSlotIndex` (default `0`) and sends CharacterSelected. A reimplementer that wants to display the character list must parse each record: per-character data includes the character name (UTF-16LE string), character id (`i32`), access level (`i32`), class id (`i32`), last used flag, and a variable-length block with appearance, stats, and equipment. The layout is stable across L2J Mobius builds but is irrelevant for auto-entering the world, so its full decoding is out of scope here.
+The auto-login algorithm does not need to parse character records; it simply picks `CONFIG.CharSlotIndex` (default `0`) and sends CharacterSelected. A reimplementer that wants to display the character list must parse each record: per-character data includes the character name (UTF-16LE string), character id (`i32`), access level (`i32`), class id (`i32`), last used flag, and a variable-length block with appearance, stats, and equipment. The layout is stable across HighFive builds but is irrelevant for auto-entering the world, so its full decoding is out of scope here.
 
 #### CharacterSelected (C→S, opcode `0x12`)
 
@@ -671,10 +669,10 @@ Total body size: **19 bytes** (1 opcode + 4 `slotIndex` + 14 zero pad).
 | 15     | `_unk4`     | `i32`       | zero      |
 
 The trailing 14 bytes are read by the server as four typed fields
-(`readShort + 3×readInt`, see `CharacterSelect.java:77-81`) and will cause a
+(one `i16` + three `i32`) and will cause a
 `BufferUnderflowException` if absent. Total body size is **19 bytes**. All
 four fields are carried over from the C4 client and are simply discarded by
-L2J Mobius, so a client may transmit zeros.
+the server, so a client may transmit zeros.
 
 #### CharSelected (S→C, opcode `0x0B`)
 
@@ -700,7 +698,7 @@ Total body size: **105 bytes** (1 opcode + 104 zero pad).
 | 0      | opcode  | `u8`         | `0x11`    |
 | 1      | padding | `bytes[104]` | all zeros |
 
-**The 104 zero bytes are mandatory on L2J Mobius** — the server parses them as hardware info / traceroute blob and will throw `BufferUnderflowException` otherwise.
+**The 104 zero bytes are mandatory** — the server parses them as a hardware info / traceroute blob and will throw `BufferUnderflowException` otherwise.
 
 #### UserInfo (S→C, opcode `0x32`)
 
@@ -743,8 +741,8 @@ The server periodically sends NetPingRequest; the client must answer promptly wi
 | 1      | `pingId` | `i32`         |
 
 Earlier protocol drafts (and most public L2 documentation) list this packet
-at `0xD3`, but in L2J Mobius CT 2.6 HighFive `0xD3 = EARTHQUAKE` and the
-ping request moved to `0xD9` (`ServerPackets.java:247`).
+at `0xD3`, but on HighFive `0xD3 = EARTHQUAKE` and the
+ping request moved to `0xD9`.
 
 #### NetPing (C→S, opcode `0xB1`)
 
@@ -755,19 +753,17 @@ ping request moved to `0xD9` (`ServerPackets.java:247`).
 | 0      | opcode   | `u8`  | `0xB1`                   |
 | 1      | `pingId` | `i32` | echo from NetPingRequest |
 
-On CT 2.6 HighFive the server opcode handler is `ClientPackets.NET_PING`
-at `0xB1` (`ClientPackets.java:175`). Some earlier chronicle documentation
-lists the C→S ping at `0xA8`; on CT 2.6 `0xA8 = REQUEST_PACKAGE_SEND`, so
-sending a ping at `0xA8` will reach the wrong handler.
+On HighFive the server opcode handler for the C→S ping is at `0xB1`.
+Some earlier chronicle documentation lists the C→S ping at `0xA8`;
+on HighFive `0xA8 = REQUEST_PACKAGE_SEND`, so sending a ping at `0xA8`
+will reach the wrong handler.
 
 ### Representative gameplay packets
 
 These packets are not required to enter the world, but are included so that a reimplementer knows the pattern used for common commands. All are subject to the XOR cipher when [CryptInit](#cryptinit-s-c-opcode-0x2e--plaintext)'s `encryptionFlag` is non-zero.
 
-All opcodes below are taken from `ClientPackets.java` in
-`c:\MyProg\l2J-Mobius-CT-2.6-HighFive\java\org\l2jmobius\gameserver\network\`.
-Earlier L2 chronicles (Interlude, Gracia, etc.) use different numbers — do
-**not** port opcodes from Interlude-era documentation.
+C→S opcodes for HighFive. Earlier L2 chronicles (Interlude, Gracia, etc.) use
+different numbers — do **not** port opcodes from Interlude-era documentation.
 
 | Opcode        | Name                               | Body (beyond opcode)                                                                                                 |
 | ------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -785,25 +781,25 @@ Earlier L2 chronicles (Interlude, Gracia, etc.) use different numbers — do
 | `0x62`        | RequestQuestList                   | _(no body)_                                                                                                          |
 | `0x63`        | RequestQuestAbort                  | `i32 questId`                                                                                                        |
 | `0xB1`        | NetPing                            | `i32 pingId` — see [NetPing](#netping-c-s-opcode-0xb1)                                                               |
-| `0xD0 …`      | extended packets                   | all extended C→S packets (see `ExClientPackets.java`), including RequestKeyMapping (`0x0021`)                        |
+| `0xD0 …`      | extended packets                   | all extended C→S packets, including RequestKeyMapping (`0x0021`)                                                     |
 
-**Opcode `0x14` is NOT overloaded on CT 2.6 HighFive.** It is only
+**Opcode `0x14` is NOT overloaded on HighFive.** It is only
 `RequestItemList` with no body. `UseItem` has its own opcode (`0x19`). The
 "overload by body length" behaviour is an Interlude-era artefact and does
 not apply here.
 
 **Extended packet `0xD0 0x0001` = `RequestManorList`.** The often-cited
 subopcode `0x0008` for "EnterGameServer / RequestManorList" is an
-Interlude-era carryover and is absent from CT 2.6 HighFive. A reimplementer
-does not need to send an `EnterGameServer` packet at all — the CT 2.6
+Interlude-era carryover and is absent from HighFive. A reimplementer
+does not need to send an `EnterGameServer` packet at all — the HighFive
 server drives the transition from character selection to world through
 `EnterWorld (0x11)`.
 
-**RequestSocialAction** has opcode `0x34` on CT 2.6 HighFive but the server
-handler is `null` in `ClientPackets.java`, i.e. not routed. Social actions
-are therefore effectively unsupported by the CT 2.6 server build; the id
-table below is retained only as protocol-level reference and is action-ids
-sent via other means (e.g. `RequestActionUse 0x56`).
+**RequestSocialAction** has opcode `0x34` on HighFive but the server
+handler is not routed. Social actions are therefore effectively
+unsupported by the HighFive server build; the id table below is retained
+only as protocol-level reference, and action ids are sent via other means
+(e.g. `RequestActionUse 0x56`).
 
 **Social action ids** (body is `i32`).
 
@@ -823,7 +819,7 @@ sent via other means (e.g. `RequestActionUse 0x56`).
 | `12` | Applaud          |
 | `13` | Dance            |
 
-These suffice to implement movement, combat, inventory use, chat, skill casting, and basic social actions. Additional opcodes can be added incrementally — the L2J Mobius source is the authoritative reference for any packet not listed here.
+These suffice to implement movement, combat, inventory use, chat, skill casting, and basic social actions. Additional opcodes can be added incrementally.
 
 ### Server-to-client packets beyond the handshake
 
@@ -831,7 +827,7 @@ Once the client reaches `IN_GAME`, the server begins streaming a large set of op
 
 1. **Framed** using the `u16 LE` length prefix (see [Packet framing](#packet-framing)).
 2. **Decrypted** with `key_sc` (see [Game XOR stream cipher](CRYPTOGRAPHY.md#game-xor-stream-cipher)), and `key_sc[8..12]` must be rotated by the packet's body size **regardless of whether the opcode is recognised**. Skipping the rotation for unknown packets will silently desynchronise subsequent packets.
-3. **Dispatched** by opcode. Unknown opcodes should be logged at `WARN` level but **must not** trigger a disconnect — the L2J Mobius server regularly sends build-specific opcodes a HighFive-only client has never seen.
+3. **Dispatched** by opcode. Unknown opcodes should be logged at `WARN` level but **must not** trigger a disconnect — the server regularly sends build-specific opcodes a HighFive-only client has never seen.
 
 The two opcodes a minimal client **must** handle after `IN_GAME`:
 

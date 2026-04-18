@@ -1,12 +1,11 @@
 # Lineage 2 HighFive — Character Inventory Specification
 
 **Chronicle:** HighFive
-**Server flavor:** L2J Mobius (CT 2.6 HighFive)
 **Scope:** the character's personal inventory — the items a player carries and equips on their own body. This document covers the **paperdoll** (every slot on the character model), the **equippable item catalogue** (weapons, armor, accessories), **adena**, the on‑wire layout of a single item record, and the narrow set of client↔server packets that list / use / equip / unequip / drop / destroy items belonging to the character.
 
 Explicitly **out of scope** (covered elsewhere or intentionally not documented here): warehouse and clan warehouse, freight / mail, pet inventory, trade window, private stores, quest items, recipe books.
 
-This complements [PROTOCOL.md](PROTOCOL.md) (framing, primitives, handshake), [CONSTANTS.md](CONSTANTS.md) (opcode tables), and [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) (game XOR cipher). Server file paths (`c:\MyProg\l2J-Mobius-CT-2.6-HighFive\`) are cited for cross‑checking only. All integer fields are little‑endian; see [PROTOCOL.md — Common primitives](PROTOCOL.md#common-primitives) for `u8`/`u16`/`u32`/`u64` definitions.
+This complements [PROTOCOL.md](PROTOCOL.md) (framing, primitives, handshake), [CONSTANTS.md](CONSTANTS.md) (opcode tables), and [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) (game XOR cipher). Companion docs: character stats [RACES_CLASSES.md](RACES_CLASSES.md); item catalogue [ITEMS.md](ITEMS.md); skill trees [SKILLS.md](SKILLS.md). All integer fields are little‑endian; see [PROTOCOL.md — Common primitives](PROTOCOL.md#common-primitives) for `u8`/`u16`/`u32`/`u64` definitions.
 
 ---
 
@@ -23,15 +22,13 @@ PlayerInventory  (extends Inventory, ItemContainer)
 └── adena / ancient-adena fast-access fields
 ```
 
-`Player.getInventory()` returns a `PlayerInventory`; every item the character owns passes through it. Equip/unequip is an in‑place pointer move between the `_paperdoll[]` array and the free list — no new `objectId` is ever assigned.
-
-Source: [Inventory.java](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/itemcontainer/Inventory.java), [PlayerInventory.java](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/itemcontainer/PlayerInventory.java).
+Every item the character owns passes through `PlayerInventory`. Equip/unequip is an in‑place pointer move between the `paperdoll[]` array and the free list — no new `objectId` is ever assigned.
 
 ---
 
-## Capacity, weight, adena
+## Capacity model
 
-Capacity is expressed in *slots*, not weight; weight is tracked separately and only affects movement speed. Defaults from [PlayerConfig.java:125-132, 205, 380-383, 492](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/config/PlayerConfig.java):
+Capacity is expressed in *slots*, not weight; weight is tracked separately and only affects movement speed.
 
 | Config key | Default | Applies to |
 |---|---:|---|
@@ -47,20 +44,20 @@ Weight:
 
 | Constant | Value | Source |
 |---|---:|---|
-| `MAX_ARMOR_WEIGHT` | `12 000` | `Inventory.MAX_ARMOR_WEIGHT` — soft threshold for the movement‑speed penalty |
+| `MAX_ARMOR_WEIGHT` | `12 000` | soft threshold for the movement‑speed penalty |
 
-Adena (and its Kamaloka counterpart, Ancient Adena) are ordinary stackable items with fixed template ids, but the server caches them as dedicated fields inside `PlayerInventory` for O(1) lookup:
+Adena (and its Kamaloka counterpart, Ancient Adena) are ordinary stackable items with fixed template ids, but the server caches them as dedicated fields inside the inventory container for O(1) lookup:
 
 | Concept | Item id | Notes |
 |---|---:|---|
-| Adena | `57` | `Inventory.ADENA_ID` — universal currency |
-| Ancient Adena | `5575` | `Inventory.ANCIENT_ADENA_ID` — Kamaloka / Seven Signs currency |
+| Adena | `57` | universal currency |
+| Ancient Adena | `5575` | Kamaloka / Seven Signs currency |
 
 ---
 
 ## Paperdoll slots
 
-The character model has **25** equipment positions, numbered `0..24`. The index itself appears on the wire as the `location` field of any equipped item (see [On‑wire item record](#onwire-item-record)). From [Inventory.java:80-105](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/itemcontainer/Inventory.java).
+The character model has **25** equipment positions, numbered `0..24`. The index itself appears on the wire as the `location` field of any equipped item (see [On‑wire item record](#onwire-item-record)).
 
 | Index | Constant | Slot | What goes here |
 |------:|---|---|---|
@@ -113,7 +110,7 @@ When such an item is equipped, the `InventoryUpdate (0x21)` sent to the client c
 
 ## Body‑part bitmasks
 
-Every item template carries a single `bodyPart` bitmask — the `u32` written into the on‑wire item record tells the client which slot (or slot group) this item belongs to. From [BodyPart.java:35-72](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/enums/BodyPart.java).
+Every item template carries a single `bodyPart` bitmask — the `u32` written into the on‑wire item record tells the client which slot (or slot group) this item belongs to.
 
 | Mask (hex) | Name | Paperdoll target |
 |---:|---|---|
@@ -147,7 +144,7 @@ Every item template carries a single `bodyPart` bitmask — the `u32` written in
 
 Pet body‑part values (negative ids `-100..-104` — `WOLF`, `HATCHLING`, `STRIDER`, `BABYPET`, `GREATWOLF`) are **not character inventory**, only referenced here for completeness. They never equip onto a character paperdoll.
 
-Resolution of combo masks is centralised in `BodyPart.getPaperdollIndex()` at [BodyPart.java:142-164](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/enums/BodyPart.java).
+Resolution of combo masks is centralised in the server's `getPaperdollIndex()` routine.
 
 ---
 
@@ -161,7 +158,7 @@ What a character can wear / hold splits into three top‑level families:
 
 Each item template has two coarse type numbers that are sent on the wire (`type2`) or used only server‑side (`type1`):
 
-### `type1` — top‑level category (from [ItemTemplate.java:67-69](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/ItemTemplate.java))
+### `type1` — top‑level category
 
 | Value | Name | Items |
 |---:|---|---|
@@ -169,7 +166,7 @@ Each item template has two coarse type numbers that are sent on the wire (`type2
 | `1` | `TYPE1_SHIELD_ARMOR` | Shields and body armor |
 | `4` | `TYPE1_ITEM_QUESTITEM_ADENA` | Etc items, adena, quest items |
 
-### `type2` — subcategory (written into the on‑wire item record, [ItemTemplate.java:71-76](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/ItemTemplate.java))
+### `type2` — subcategory (written into the on‑wire item record)
 
 | Value | Name | Typical content |
 |---:|---|---|
@@ -182,7 +179,7 @@ Each item template has two coarse type numbers that are sent on the wire (`type2
 
 ### Weapon subtype (`WeaponType`)
 
-From [WeaponType.java:25-43](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/type/WeaponType.java). Two‑handed subtypes are marked with `(LR_HAND)`.
+Two‑handed subtypes are marked with `(LR_HAND)`.
 
 | Name | Notes |
 |---|---|
@@ -206,8 +203,6 @@ From [WeaponType.java:25-43](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius
 
 ### Armor subtype (`ArmorType`)
 
-From [ArmorType.java](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/type/ArmorType.java).
-
 | Name | Notes |
 |---|---|
 | `NONE` | Robe‑less accessories / underwear |
@@ -219,7 +214,7 @@ From [ArmorType.java](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gamese
 
 ### Crystal grade (`CrystalType`)
 
-The equipment grade badge and crystallisation yield. From [CrystalType.java:23-32](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/item/type/CrystalType.java).
+The equipment grade badge and crystallisation yield.
 
 | Grade | Level | Crystal item id |
 |---|---:|---:|
@@ -236,7 +231,7 @@ The equipment grade badge and crystallisation yield. From [CrystalType.java:23-3
 
 ## Per‑class equipability
 
-The paperdoll layout is identical across every class; the **equip checks** in `UseItem` differ only by race and by class‑category (fighter / mystic). The authoritative logic is in [UseItem.java:219-314](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/clientpackets/UseItem.java).
+The paperdoll layout is identical across every class; the **equip checks** run server‑side inside `UseItem` (opcode `0x19`) and differ only by race and by class‑category (fighter / mystic).
 
 Hard rules enforced server‑side:
 
@@ -249,13 +244,13 @@ Soft rules (template‑level — mostly driven by XML `<cond>` blocks, not the w
 
 ### Talisman slots
 
-The number of active DECO slots is `0` by default and only grows when a talisman‑carrying bracelet is equipped into `PAPERDOLL_RBRACELET` (slot 16). The server computes this via `Inventory.getTalismanSlots()`; trying to equip a talisman when the count is `0` yields the standard "condition" rejection. Talisman slots are per‑character and apply to every class equally.
+The number of active DECO slots is `0` by default and only grows when a talisman‑carrying bracelet is equipped into `PAPERDOLL_RBRACELET` (slot 16). The server computes this from the bracelet template; trying to equip a talisman when the count is `0` yields the standard "condition" rejection. Talisman slots are per‑character and apply to every class equally.
 
 ---
 
 ## On‑wire item record
 
-Every character‑inventory packet (`ItemList`, `InventoryUpdate`, `ExQuestItemList`) emits one record per item through the same writer — `AbstractItemPacket.writeItem(ItemInfo, …)` at [AbstractItemPacket.java:55-71](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/serverpackets/AbstractItemPacket.java).
+Every character‑inventory packet (`ItemList`, `InventoryUpdate`, `ExQuestItemList`) emits one record per item through the same writer.
 
 | Off. | Field | Type | Size | Notes |
 |---:|---|---|---:|---|
@@ -279,7 +274,7 @@ Every character‑inventory packet (`ItemList`, `InventoryUpdate`, `ExQuestItemL
 
 **Fixed part:** 62 bytes. Total = `62 + 2 * N`.
 
-Values come from `ItemInfo`, which snapshots the live `Item` at packet build time. See [ItemInfo.java:30-144](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/model/ItemInfo.java).
+Values are a snapshot of the live item taken at packet build time.
 
 ---
 
@@ -289,7 +284,7 @@ Only the packets that carry the character's own inventory state are documented h
 
 ### `ItemList` (opcode `0x11`)
 
-Full character inventory snapshot (quest items filtered out). Sent on EnterWorld and whenever the server forces a resync. After sending it, the server also emits `ExQuestItemList` (out of scope). From [ItemList.java:51-72](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/serverpackets/ItemList.java).
+Full character inventory snapshot (quest items filtered out). Sent on EnterWorld and whenever the server forces a resync. After sending it, the server also emits `ExQuestItemList` (out of scope).
 
 | Off. | Field | Type | Notes |
 |---:|---|---|---|
@@ -301,7 +296,7 @@ Full character inventory snapshot (quest items filtered out). Sent on EnterWorld
 
 ### `InventoryUpdate` (opcode `0x21`)
 
-Incremental delta — carries only the items whose state changed (equipped, unequipped, stack grew/shrank, item destroyed, etc.). Built via [InventoryUpdate.java](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/serverpackets/InventoryUpdate.java) / [AbstractInventoryUpdate.java:116-129](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/serverpackets/AbstractInventoryUpdate.java).
+Incremental delta — carries only the items whose state changed (equipped, unequipped, stack grew/shrank, item destroyed, etc.).
 
 | Off. | Field | Type | Notes |
 |---:|---|---|---|
@@ -319,7 +314,7 @@ Change types:
 
 ### `ExStorageMaxCount` (extended opcode `0xFE 0x2F`)
 
-Per‑category caps for the client‑side slots indicator. Sent once shortly after `EnterWorld`. From [ExStorageMaxCount.java:54-67](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/serverpackets/ExStorageMaxCount.java).
+Per‑category caps for the client‑side slots indicator. Sent once shortly after `EnterWorld`.
 
 Only two fields are relevant for *the character's inventory* itself — the rest belong to warehouse/store/recipe UIs and are listed for completeness:
 
@@ -345,7 +340,7 @@ Only the packets that the character uses to act on its **own** inventory.
 
 ### `UseItem` (opcode `0x19`)
 
-The one request that covers both "use" and "equip/unequip". If the item is equippable, the server toggles its paperdoll state; otherwise the corresponding item handler runs (potion drink, scroll read, soulshot charge, etc.). From [UseItem.java:66-71](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/clientpackets/UseItem.java).
+The one request that covers both "use" and "equip/unequip". If the item is equippable, the server toggles its paperdoll state; otherwise the corresponding item handler runs (potion drink, scroll read, soulshot charge, etc.).
 
 | Off. | Field | Type | Notes |
 |---:|---|---|---|
@@ -357,18 +352,18 @@ Reply: `InventoryUpdate (0x21)` on success, `SystemMessage` on rejection.
 
 ### `RequestUnEquipItem` (opcode `0x16`)
 
-Vacate a specific paperdoll slot (used when the client wants to *explicitly* unequip rather than toggle). From [RequestUnEquipItem.java:42-47](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/clientpackets/RequestUnEquipItem.java).
+Vacate a specific paperdoll slot (used when the client wants to *explicitly* unequip rather than toggle).
 
 | Off. | Field | Type | Notes |
 |---:|---|---|---|
 | 0 | `0x16` | `u8` | opcode |
-| 1 | `paperdollSlot` | `u32` | Slot index (0..24). Server runs it through `BodyPart.fromPaperdollSlot`. |
+| 1 | `paperdollSlot` | `u32` | Slot index (0..24). Server resolves it to the corresponding body‑part mask. |
 
 Reply: `InventoryUpdate (0x21)`.
 
 ### `RequestDropItem` (opcode `0x17`)
 
-Drop `count` of the item onto the ground at the given world coordinates. The server rejects drops further than 150 units in XY or ±50 in Z, drops of quest items, drops of augmented items, and drops in no‑drop zones. From [RequestDropItem.java:52-60](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/clientpackets/RequestDropItem.java).
+Drop `count` of the item onto the ground at the given world coordinates. The server rejects drops further than 150 units in XY or ±50 in Z, drops of quest items, drops of augmented items, and drops in no‑drop zones.
 
 | Off. | Field | Type | Notes |
 |---:|---|---|---|
@@ -383,7 +378,7 @@ Reply: `InventoryUpdate` plus a ground `SpawnItem (0x05)` / `DropItem (0x16)` fo
 
 ### `RequestDestroyItem` (opcode `0x60`)
 
-Permanently destroy `count` of an item. If the item is currently equipped the server unequips it first (sending one `InventoryUpdate`), then destroys (another `InventoryUpdate`). From [RequestDestroyItem.java:48-53](../../l2J-Mobius-CT-2.6-HighFive/java/org/l2jmobius/gameserver/network/clientpackets/RequestDestroyItem.java).
+Permanently destroy `count` of an item. If the item is currently equipped the server unequips it first (sending one `InventoryUpdate`), then destroys (another `InventoryUpdate`).
 
 | Off. | Field | Type | Notes |
 |---:|---|---|---|
@@ -433,15 +428,6 @@ As of this writing [`src/l2py/protocol/game/server_packets.py`](../src/l2py/prot
 - [CONSTANTS.md](CONSTANTS.md) — opcode tables, system message ids.
 - [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) — game XOR cipher and per‑packet key rotation.
 - [CHECKLIST.md](CHECKLIST.md) — porting checklist.
-
-Server sources used (paths relative to `c:\MyProg\l2J-Mobius-CT-2.6-HighFive\java\`):
-
-- `org/l2jmobius/gameserver/model/itemcontainer/{Inventory, PlayerInventory, ItemContainer}.java`
-- `org/l2jmobius/gameserver/model/item/enums/BodyPart.java`
-- `org/l2jmobius/gameserver/model/item/type/{WeaponType, ArmorType, CrystalType}.java`
-- `org/l2jmobius/gameserver/model/item/instance/Item.java`
-- `org/l2jmobius/gameserver/model/item/ItemTemplate.java`
-- `org/l2jmobius/gameserver/model/ItemInfo.java`
-- `org/l2jmobius/gameserver/network/serverpackets/{AbstractItemPacket, AbstractInventoryUpdate, ItemList, InventoryUpdate, ExStorageMaxCount}.java`
-- `org/l2jmobius/gameserver/network/clientpackets/{UseItem, RequestUnEquipItem, RequestDropItem, RequestDestroyItem}.java`
-- `org/l2jmobius/gameserver/config/PlayerConfig.java`
+- [RACES_CLASSES.md](RACES_CLASSES.md) — race/class stats, inventory caps per race.
+- [ITEMS.md](ITEMS.md) — catalogue of concrete items that land in these slots.
+- [SKILLS.md](SKILLS.md) — class skill trees.

@@ -1,6 +1,6 @@
 # Automatic enter-game algorithm
 
-This document describes the exact sequence of steps a client must perform to go from "cold start" to "character walking in the world", using only the configuration inputs `username`, `password`, `loginHost`, `loginPort`, `serverId`, `charSlot`, and `protocol = 273`. Extracted verbatim from the historical [SPECIFICATION.md](../SPECIFICATION.md). Packet layouts are described in [PROTOCOL.md](PROTOCOL.md); crypto primitives are in [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md).
+This document describes the exact sequence of steps a client must perform to go from "cold start" to "character walking in the world", using only the configuration inputs `username`, `password`, `loginHost`, `loginPort`, `serverId`, `charSlot`, and `protocol = 273`. Packet layouts are described in [PROTOCOL.md](PROTOCOL.md); crypto primitives are in [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md); constants in [CONSTANTS.md](CONSTANTS.md).
 
 ## Sequence diagram
 
@@ -65,7 +65,7 @@ currentLoginKey = sessionBlowfishKey              # switch from static to sessio
 
 # --- RequestGGAuth (0x07) ---
 # 32-byte body: opcode + sessionId + 19 zeros + GG client tag + 4 zeros.
-# L2J Mobius accepts an all-zero GG tag, so a minimal client may send
+# The server accepts an all-zero GG tag, so a minimal client may send
 # bytes([0x07]) + i32_le(sessionId) + zeros(16) and stop after 21 bytes.
 body = bytes([0x07]) + i32_le(sessionId) + zeros(19) + i32_le(0) + zeros(4)
 send_login_encrypted(loginSock, body, currentLoginKey)
@@ -78,7 +78,7 @@ ggAuthResponse = i32_le(gg[1:5])
 # --- RequestAuthLogin (0x00) ---
 # 184-byte body: opcode + 128-byte RSA + sessionId + 16 zeros + i32(8) +
 # 3 zeros + 16-byte GG nonce + 4 zeros + i32 GG digest + 4 zeros.
-# L2J Mobius accepts an all-zero trailer, so a minimal client may send
+# The server accepts an all-zero trailer, so a minimal client may send
 # bytes([0x00]) + rsaCipher + i32_le(0) + i32_le(0) + zeros(8) (137 bytes).
 plaintext = zeros(94) + ascii_right_padded(username, 14) + zeros(2)
           + ascii_right_padded(password, 16) + zeros(2)               # 128 bytes
@@ -148,7 +148,7 @@ key_sc = xorKey + staticTail
 # from now on, encrypt/decrypt with CRYPTOGRAPHY.md "Game XOR stream cipher"
 
 # AuthRequest (0x2B) — first post-CryptInit packet. Encrypted iff encryptionOn;
-# L2J Mobius HighFive sends encryptionFlag = 0, so this stays plaintext.
+# HighFive sends encryptionFlag = 0, so this stays plaintext.
 nameUtf16 = utf16le(username) + bytes([0x00, 0x00])
 body = bytes([0x2B]) + nameUtf16
      + i32_le(playOkId2) + i32_le(playOkId1)    # SWAPPED ORDER!
@@ -182,7 +182,7 @@ loop forever:
     body = decrypt_game(pkt.body, key_sc)
     if body[0] == 0xD9:
         pingId = i32_le(body[1:5])
-        # L2J Mobius HighFive: opcode 0xB1 + pingId (5-byte body).
+        # HighFive: opcode 0xB1 + pingId (5-byte body).
         pong   = bytes([0xB1]) + i32_le(pingId)
         send_game_encrypted(gameSock, pong, key_cs)
     else:
@@ -206,7 +206,7 @@ A reimplementer can source these values from any suitable mechanism (configurati
 ## Capture cross-reference
 
 All packet sizes and trailing-block hex strings in the [Login Server protocol section of PROTOCOL.md](PROTOCOL.md#login-server-protocol) were verified
-against live L2 official client ↔ L2J Mobius CT 2.6 HighFive captures.
+against live L2 official client ↔ HighFive server captures.
 Observed packet sizes:
 
 | Direction | Wire | Body | Section | Notes                                |

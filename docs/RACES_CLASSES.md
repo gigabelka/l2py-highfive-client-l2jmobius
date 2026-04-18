@@ -1,19 +1,12 @@
-# Races and Classes (L2JMobius CT 2.6 HighFive)
+# Races and Classes (HighFive)
 
 ## Overview
 
 Complete enumeration of playable races, every `classId` the server knows, the profession-change tree, and the per-class base stats & growth curves that the client relies on to interpret `CharInfo` / `UserInfo` / `CharacterCreate` packets.
 
 - **Scope:** live playable classes only. NPC, pet, and summon races/classes are out of scope.
-- **Sources of truth (L2JMobius CT 2.6 HighFive server tree):**
-  - `dist/game/data/stats/players/classList.xml` — authoritative id → name → parent map
-  - `java/org/l2jmobius/gameserver/model/actor/enums/player/PlayerClass.java` — race + mage/summoner flags
-  - `dist/game/data/stats/players/templates/{StartingClass,1stClass,2ndClass,3rdClass}/*.xml` — base stats & per-level HP/MP/CP curves
-  - `dist/game/data/stats/players/initialEquipment.xml` — starting inventory per root class
-  - `dist/game/data/stats/players/experience.xml` — shared XP table (level cap 85)
-  - `java/org/l2jmobius/gameserver/config/PlayerConfig.java` — inventory slot caps
 - **Regenerate with:** `python scripts/gen_races_classes_doc.py`. Output is deterministic.
-- **Related:** equip rules in [INVENTORY.md](INVENTORY.md); skill trees in [SKILLS.md](SKILLS.md); items in [ITEMS.md](ITEMS.md).
+- **Related:** equip rules & paperdoll / inventory caps in [INVENTORY.md](INVENTORY.md); skill trees in [SKILLS.md](SKILLS.md); items in [ITEMS.md](ITEMS.md).
 
 ### Gotchas
 
@@ -35,7 +28,7 @@ Complete enumeration of playable races, every `classId` the server knows, the pr
 | Dwarf | 53 | 100 | Fighter-only. **100 inventory slots**. Unique craft (Warsmith) & spoil (Bounty Hunter) lines. |
 | Kamael | 123, 124 | 80 | Introduced in CT 2.3. Fighter-only; gender-locked classes. Cannot use bows — uses crossbows/rapiers instead. |
 
-Inventory-slot constants come from `PlayerConfig.java` (`MaximumSlotsForNoDwarf` = 80, `MaximumSlotsForDwarf` = 100, `MaximumSlotsForGMPlayer` = 250, `MaximumSlotsForQuest` = 100).
+Inventory-slot constants (NoDwarf=80, Dwarf=100, GM=250, Quest=100) — full detail in [INVENTORY.md § Capacity model](INVENTORY.md#capacity-model).
 
 ## Class hierarchy
 
@@ -212,7 +205,7 @@ Milestone levels only. Full per-level curves live in the template XMLs.
 
 ## Starting equipment
 
-`initialEquipment.xml` — one entry per root class. Items flagged `equipped=true` are placed on the paperdoll; everything else lands in the main inventory.
+One entry per root class. Items flagged `equipped=true` are placed on the paperdoll; everything else lands in the main inventory.
 
 | classId | Class | Equipped on paperdoll | In inventory |
 |--------:|-------|-----------------------|--------------|
@@ -243,7 +236,7 @@ Shared across every class. The `tolevel` value is the **cumulative XP at which t
 | 80 | 3,075,966,164 |
 | 85 | 13,180,481,103 |
 
-Server-defined level cap: **85** (the `experience.xml` table contains rows up to level 87 for interpolation, but the server will not grant XP beyond the cap).
+Server-defined level cap: **85** (the XP table contains rows up to level 87 for interpolation, but the server will not grant XP beyond the cap).
 
 ## Profession-change gates
 
@@ -255,7 +248,7 @@ Server-defined level cap: **85** (the `experience.xml` table contains rows up to
 
 ## Pet-capable (summoner) classes
 
-classIds flagged `isSummoner=true` in PlayerClass.java: 14 (Warlock), 28 (Elemental Summoner), 41 (Phantom Summoner), 96 (Arcana Lord), 104 (Elemental Master), 111 (Spectral Master).
+Summoner classIds: 14 (Warlock), 28 (Elemental Summoner), 41 (Phantom Summoner), 96 (Arcana Lord), 104 (Elemental Master), 111 (Spectral Master).
 
 These classes maintain a servitor pet; `NpcInfo` frames for the servitor share the channel with the owner's packets and must be routed separately.
 

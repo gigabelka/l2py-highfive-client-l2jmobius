@@ -1,4 +1,4 @@
-# Character Equipment & Money Catalogue (L2JMobius CT 2.6 HighFive)
+# Character Equipment & Money Catalogue (HighFive)
 
 ## Overview
 
@@ -12,9 +12,8 @@ Every item that a character of any class can place into their personal inventory
 
 Excluded: etc items (potions, shots, scrolls, recipes, materials, arrows/bolts, quest items), pet-only gear, and entries named `(Not In Use)`.
 
-- **Source of truth:** `dist/game/data/stats/items/*.xml` in the L2JMobius CT 2.6 HighFive server tree.
 - **Regenerate with:** `python scripts/gen_items_doc.py`. Output is deterministic.
-- **Related:** paperdoll slot layout, equip rules, on-wire item record — see [INVENTORY.md](INVENTORY.md).
+- **Related:** paperdoll slot layout, equip rules, on-wire item record — see [INVENTORY.md](INVENTORY.md). Class that can wear a given template: [RACES_CLASSES.md](RACES_CLASSES.md). Skills a class grants: [SKILLS.md](SKILLS.md).
 
 ### Column meanings
 
@@ -32,7 +31,7 @@ Excluded: etc items (potions, shots, scrolls, recipes, materials, arrows/bolts, 
 
 | Id | Name | Template type | Notes |
 |---:|------|---------------|-------|
-| 57 | Adena | `EtcItem` | Universal currency; capped at `PlayerConfig.MAX_ADENA` (default 99 900 000 000). |
+| 57 | Adena | `EtcItem` | Universal currency; capped at `MaxAdena` (default 99 900 000 000). |
 | 5575 | Ancient Adena | `EtcItem` | Kamaloka / Seven Signs currency. |
 
 ## Weapons (3893)

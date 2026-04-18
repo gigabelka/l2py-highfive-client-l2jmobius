@@ -1,12 +1,12 @@
-# Character Skills (L2JMobius CT 2.6 HighFive)
+# Character Skills (HighFive)
 
 ## Overview
 
-This file enumerates every class skill that a playable character can learn on a vanilla L2JMobius CT 2.6 HighFive server.
+This file enumerates every class skill that a playable character can learn on a HighFive server.
 
 - **Scope:** 1st/2nd/3rd class skill trees only. Fishing, collect, transfer, transform, sub-class, sub-pledge, noble, hero, GM, and clan trees are intentionally excluded.
-- **Source of truth:** `dist/game/data/stats/players/skillTrees/{1stClass,2ndClass,3rdClass}/*.xml` in the L2JMobius CT 2.6 HighFive server tree.
-- **Regenerate with:** `python scripts/gen_skills_doc.py`. The output is deterministic — rerunning on unchanged server data produces a byte-identical file.
+- **Regenerate with:** `python scripts/gen_skills_doc.py`. The output is deterministic — rerunning on unchanged input produces a byte-identical file.
+- **Related:** class hierarchy & learn-level gates in [RACES_CLASSES.md](RACES_CLASSES.md); equipment a class can wield in [INVENTORY.md](INVENTORY.md); item catalogue in [ITEMS.md](ITEMS.md).
 
 ### Column meanings
 
@@ -20,9 +20,9 @@ This file enumerates every class skill that a playable character can learn on a 
 
 ### Notes
 
-- Per-sub-level rows in the XML are coalesced: one table row per `skillId`. Expand the raw XML if you need the per-sub-level SP breakdown.
-- Classes inherit skills from their parents in L2 canon, but each class's XML already contains only the skills that class itself grants — parent skills are *not* duplicated here.
-- Per-level skill mechanics (damage, effects, cooldowns, MP cost, target type) are **not** covered in this spec. See `dist/game/data/stats/skills/*.xml` on the server for those.
+- Per-sub-level rows are coalesced: one table row per `skillId`.
+- Classes inherit skills from their parents in L2 canon, but each class's row set here contains only the skills that class itself grants — parent skills are *not* duplicated.
+- Per-level skill mechanics (damage, effects, cooldowns, MP cost, target type) are **not** covered in this spec.
 
 ## Class index
 

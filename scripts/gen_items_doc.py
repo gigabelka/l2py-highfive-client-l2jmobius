@@ -245,7 +245,7 @@ def build_doc(items: list[Item]) -> str:
     out: list[str] = []
     w = out.append
 
-    w("# Character Equipment & Money Catalogue (L2JMobius CT 2.6 HighFive)")
+    w("# Character Equipment & Money Catalogue (HighFive)")
     w("")
     w("## Overview")
     w("")
@@ -261,9 +261,8 @@ def build_doc(items: list[Item]) -> str:
     w("")
     w("Excluded: etc items (potions, shots, scrolls, recipes, materials, arrows/bolts, quest items), pet-only gear, and entries named `(Not In Use)`.")
     w("")
-    w("- **Source of truth:** `dist/game/data/stats/items/*.xml` in the L2JMobius CT 2.6 HighFive server tree.")
     w("- **Regenerate with:** `python scripts/gen_items_doc.py`. Output is deterministic.")
-    w("- **Related:** paperdoll slot layout, equip rules, on-wire item record — see [INVENTORY.md](INVENTORY.md).")
+    w("- **Related:** paperdoll slot layout, equip rules, on-wire item record — see [INVENTORY.md](INVENTORY.md). Class that can wear a given template: [RACES_CLASSES.md](RACES_CLASSES.md). Skills a class grants: [SKILLS.md](SKILLS.md).")
     w("")
     w("### Column meanings")
     w("")
@@ -285,7 +284,7 @@ def build_doc(items: list[Item]) -> str:
     w("| Id | Name | Template type | Notes |")
     w("|---:|------|---------------|-------|")
     for it in sorted(money_items, key=lambda i: i.id):
-        note = "Universal currency; capped at `PlayerConfig.MAX_ADENA` (default 99 900 000 000)." if it.id == 57 else "Kamaloka / Seven Signs currency."
+        note = "Universal currency; capped at `MaxAdena` (default 99 900 000 000)." if it.id == 57 else "Kamaloka / Seven Signs currency."
         w(f"| {it.id} | {it.name} | `{it.type}` | {note} |")
     w("")
 

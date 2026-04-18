@@ -304,7 +304,7 @@ def render(
     out = lines.append
 
     # ---- Header -----------------------------------------------------------
-    out("# Races and Classes (L2JMobius CT 2.6 HighFive)")
+    out("# Races and Classes (HighFive)")
     out("")
     out("## Overview")
     out("")
@@ -318,24 +318,11 @@ def render(
     out(
         "- **Scope:** live playable classes only. NPC, pet, and summon races/classes are out of scope."
     )
-    out("- **Sources of truth (L2JMobius CT 2.6 HighFive server tree):**")
-    out("  - `dist/game/data/stats/players/classList.xml` — authoritative id → name → parent map")
-    out(
-        "  - `java/org/l2jmobius/gameserver/model/actor/enums/player/PlayerClass.java` — race + mage/summoner flags"
-    )
-    out(
-        "  - `dist/game/data/stats/players/templates/{StartingClass,1stClass,2ndClass,3rdClass}/*.xml` — base stats & per-level HP/MP/CP curves"
-    )
-    out(
-        "  - `dist/game/data/stats/players/initialEquipment.xml` — starting inventory per root class"
-    )
-    out("  - `dist/game/data/stats/players/experience.xml` — shared XP table (level cap 85)")
-    out("  - `java/org/l2jmobius/gameserver/config/PlayerConfig.java` — inventory slot caps")
     out(
         "- **Regenerate with:** `python scripts/gen_races_classes_doc.py`. Output is deterministic."
     )
     out(
-        "- **Related:** equip rules in [INVENTORY.md](INVENTORY.md); skill trees in [SKILLS.md](SKILLS.md); items in [ITEMS.md](ITEMS.md)."
+        "- **Related:** equip rules & paperdoll / inventory caps in [INVENTORY.md](INVENTORY.md); skill trees in [SKILLS.md](SKILLS.md); items in [ITEMS.md](ITEMS.md)."
     )
     out("")
     out("### Gotchas")
@@ -381,7 +368,7 @@ def render(
         out(f"| {RACE_LABEL[race]} | {ids} | {slots} | {notes[race]} |")
     out("")
     out(
-        "Inventory-slot constants come from `PlayerConfig.java` (`MaximumSlotsForNoDwarf` = 80, `MaximumSlotsForDwarf` = 100, `MaximumSlotsForGMPlayer` = 250, `MaximumSlotsForQuest` = 100)."
+        "Inventory-slot constants (NoDwarf=80, Dwarf=100, GM=250, Quest=100) — full detail in [INVENTORY.md § Capacity model](INVENTORY.md#capacity-model)."
     )
     out("")
 
@@ -486,7 +473,7 @@ def render(
     out("## Starting equipment")
     out("")
     out(
-        "`initialEquipment.xml` — one entry per root class. Items flagged `equipped=true` are placed on the paperdoll; everything else lands in the main inventory."
+        "One entry per root class. Items flagged `equipped=true` are placed on the paperdoll; everything else lands in the main inventory."
     )
     out("")
     out("| classId | Class | Equipped on paperdoll | In inventory |")
@@ -520,7 +507,7 @@ def render(
             out(f"| {lvl} | {xp[lvl]:,} |")
     out("")
     out(
-        f"Server-defined level cap: **{max_level}** (the `experience.xml` table contains rows up to level {max(xp)} for interpolation, but the server will not grant XP beyond the cap)."
+        f"Server-defined level cap: **{max_level}** (the XP table contains rows up to level {max(xp)} for interpolation, but the server will not grant XP beyond the cap)."
     )
     out("")
 
@@ -539,7 +526,7 @@ def render(
     out("## Pet-capable (summoner) classes")
     out("")
     out(
-        "classIds flagged `isSummoner=true` in PlayerClass.java: "
+        "Summoner classIds: "
         + ", ".join(f"{cid} ({classes[cid].name})" for cid in summoners)
         + "."
     )

@@ -97,24 +97,25 @@ def render(trees: list[ClassTree]) -> str:
         return parent.file_name if parent else f"classId {parent_id}"
 
     lines: list[str] = []
-    lines.append("# Character Skills (L2JMobius CT 2.6 HighFive)")
+    lines.append("# Character Skills (HighFive)")
     lines.append("")
     lines.append("## Overview")
     lines.append("")
     lines.append(
         "This file enumerates every class skill that a playable character can "
-        "learn on a vanilla L2JMobius CT 2.6 HighFive server."
+        "learn on a HighFive server."
     )
     lines.append("")
     lines.append("- **Scope:** 1st/2nd/3rd class skill trees only. Fishing, collect, "
                  "transfer, transform, sub-class, sub-pledge, noble, hero, GM, and "
                  "clan trees are intentionally excluded.")
-    lines.append("- **Source of truth:** "
-                 "`dist/game/data/stats/players/skillTrees/{1stClass,2ndClass,3rdClass}/*.xml` "
-                 "in the L2JMobius CT 2.6 HighFive server tree.")
     lines.append("- **Regenerate with:** `python scripts/gen_skills_doc.py`. The "
-                 "output is deterministic — rerunning on unchanged server data "
+                 "output is deterministic — rerunning on unchanged input "
                  "produces a byte-identical file.")
+    lines.append("- **Related:** class hierarchy & learn-level gates in "
+                 "[RACES_CLASSES.md](RACES_CLASSES.md); equipment a class can "
+                 "wield in [INVENTORY.md](INVENTORY.md); item catalogue in "
+                 "[ITEMS.md](ITEMS.md).")
     lines.append("")
     lines.append("### Column meanings")
     lines.append("")
@@ -133,15 +134,13 @@ def render(trees: list[ClassTree]) -> str:
     lines.append("")
     lines.append("### Notes")
     lines.append("")
-    lines.append("- Per-sub-level rows in the XML are coalesced: one table row per "
-                 "`skillId`. Expand the raw XML if you need the per-sub-level SP "
-                 "breakdown.")
+    lines.append("- Per-sub-level rows are coalesced: one table row per "
+                 "`skillId`.")
     lines.append("- Classes inherit skills from their parents in L2 canon, but "
-                 "each class's XML already contains only the skills that class "
-                 "itself grants — parent skills are *not* duplicated here.")
+                 "each class's row set here contains only the skills that class "
+                 "itself grants — parent skills are *not* duplicated.")
     lines.append("- Per-level skill mechanics (damage, effects, cooldowns, MP "
-                 "cost, target type) are **not** covered in this spec. See "
-                 "`dist/game/data/stats/skills/*.xml` on the server for those.")
+                 "cost, target type) are **not** covered in this spec.")
     lines.append("")
 
     lines.append("## Class index")

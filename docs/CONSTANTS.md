@@ -1,6 +1,6 @@
 # Constants appendix
 
-Reference tables: magic constants, reason codes, action ids, duplicated opcodes. Extracted verbatim from the historical [SPECIFICATION.md](../SPECIFICATION.md).
+Reference tables: magic constants, reason codes, action ids, duplicated opcodes. Packet body specs live in [PROTOCOL.md](PROTOCOL.md); crypto primitives in [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md).
 
 | Name                              | Value                                                          | Used in                  |
 | --------------------------------- | -------------------------------------------------------------- | ------------------------ |

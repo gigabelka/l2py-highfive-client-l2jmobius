@@ -1,6 +1,6 @@
 # Cryptography
 
-This document describes the cryptographic primitives used by the Lineage 2 HighFive (L2J Mobius CT 2.6) protocol: Blowfish for the login phase, RSA-1024 (no padding) for credential submission, and an L2-specific XOR stream cipher for the game phase. Extracted verbatim from the historical [SPECIFICATION.md](../SPECIFICATION.md).
+This document describes the cryptographic primitives used by the Lineage 2 HighFive protocol: Blowfish for the login phase, RSA-1024 (no padding) for credential submission, and an L2-specific XOR stream cipher for the game phase. Constants index: [CONSTANTS.md](CONSTANTS.md); packets that use these primitives: [PROTOCOL.md](PROTOCOL.md).
 
 Three independent cryptographic primitives are used: Blowfish (login phase), RSA-1024 with no padding (credential submission only), and an L2-specific 16-byte XOR stream cipher (game phase).
 
@@ -170,7 +170,7 @@ key[8..12] = u32_le_bytes(w)
 
 Both `key_cs` and `key_sc` evolve independently. If the two sides drift out of sync, subsequent packets will be garbage — the stream cipher has no framing recovery.
 
-**First packet rule (HighFive):** on HighFive the very first packet the server sends (CryptInit, see [Game Server handshake](PROTOCOL.md#handshake-packets)) and the very first packet the client sends (ProtocolVersion, same section) are **plaintext** because the key has not yet been established. Whether packets after CryptInit are encrypted is controlled by CryptInit's `encryptionFlag`: if non-zero, all subsequent packets (starting with the client's AuthRequest) are XOR-encrypted; if zero, the entire session stays plaintext. L2J Mobius CT 2.6 HighFive sends `encryptionFlag = 0` — see [Game Server handshake](PROTOCOL.md#handshake-packets).
+**First packet rule (HighFive):** on HighFive the very first packet the server sends (CryptInit, see [Game Server handshake](PROTOCOL.md#handshake-packets)) and the very first packet the client sends (ProtocolVersion, same section) are **plaintext** because the key has not yet been established. Whether packets after CryptInit are encrypted is controlled by CryptInit's `encryptionFlag`: if non-zero, all subsequent packets (starting with the client's AuthRequest) are XOR-encrypted; if zero, the entire session stays plaintext. On HighFive the server sends `encryptionFlag = 0` — see [Game Server handshake](PROTOCOL.md#handshake-packets).
 
 ## Test vectors
 
