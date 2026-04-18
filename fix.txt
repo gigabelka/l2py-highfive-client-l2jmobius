@@ -1,0 +1,10 @@
+Рабочая спецификация SPECIFICATION.md.
+
+(.venv) (base) PS C:\MyProg\l2py-highfive-client-l2jmobius> python main.py
+[ERROR] Expected CharSelected (0x0B), got 0x73
+
+Проверка:
+.venv\Scripts\activate
+python main.py
+
+Персонаж не заходит в игру. Почини.
