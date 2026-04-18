@@ -18,6 +18,6 @@ python main.py
 [OK] Successfully entered the game!
    Character: qwerty
    Level: 1
-   Coordinates: (-71505, 258319, -3135)
+   Coordinates: ...
 [INFO] Staying in game. Press Ctrl+C to exit.
 Значит персонаж зашел в игру и остался в ней. Можешь завершать работу.
