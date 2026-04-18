@@ -390,19 +390,24 @@ Note that opcodes are not globally unique: `0x00` and `0x07` exist in both direc
 
 ### 4.3 Init (S→C, opcode `0x00`)
 
-Decrypted body (after Blowfish + reverse rolling XOR + dropping 8 trailing bytes):
+Decrypted body (after Blowfish + reverse rolling XOR + dropping 8 trailing bytes
+that hold the rolling-XOR seed and 4 unused bytes — see §3.3):
 
-| Offset | Field              | Type         | Size | Notes                                    |
-| ------ | ------------------ | ------------ | ---- | ---------------------------------------- |
-| 0      | opcode             | `u8`         | 1    | `0x00`                                   |
-| 1      | `sessionId`        | `i32`        | 4    | used by RequestGGAuth                    |
-| 5      | `protocolRevision` | `i32`        | 4    | expected `0x0000C621`                    |
-| 9      | `scrambledRsaKey`  | `bytes[128]` | 128  | must be unscrambled (§3.4)               |
-| 137    | reserved           | `bytes[16]`  | 16   | four `i32`, ignored                      |
-| 153    | `blowfishKey`      | `bytes[16]`  | 16   | session key for subsequent login packets |
-| 169    | null terminator    | `u8`         | 1    | `0x00`                                   |
+| Offset | Field              | Type         | Size | Notes                                                                      |
+| ------ | ------------------ | ------------ | ---- | -------------------------------------------------------------------------- |
+| 0      | opcode             | `u8`         | 1    | `0x00`                                                                     |
+| 1      | `sessionId`        | `i32`        | 4    | echoed in RequestGGAuth                                                    |
+| 5      | `protocolRevision` | `i32`        | 4    | expected `0x0000C621`                                                      |
+| 9      | `scrambledRsaKey`  | `bytes[128]` | 128  | must be unscrambled (§3.4)                                                 |
+| 137    | reserved           | `bytes[16]`  | 16   | four random `i32` (GG seed material), ignored by the client                |
+| 153    | `blowfishKey`      | `bytes[16]`  | 16   | session key for every subsequent login packet, both directions             |
+| 169    | trailing block     | `bytes[15]`  | 15   | starts with a `u8 0x00` terminator, then two `i32` + `u16` of GG/extra data |
 
-Total payload: **170 bytes**.
+Total payload: **184 bytes**. The trailing 15 bytes after `blowfishKey` are
+present on every L2J Mobius CT 2.6 Init and were observed in
+`good_sesion.txt` Frame 6 as `00 00 00 00 00 5b a8 44 f7 00 00 00 00 00 00`.
+A reimplementer can leave them as opaque — only the first 169 bytes are
+required for the auto-login flow.
 
 ### 4.4 LoginFail (S→C, opcode `0x01`)
 
@@ -432,22 +437,29 @@ Codes outside this set are logged as `Unknown reason (0x…)` and treated as fat
 
 ### 4.5 LoginOk (S→C, opcode `0x03`)
 
-| Offset | Field        | Type          |
-| ------ | ------------ | ------------- |
-| 0      | opcode       | `u8` = `0x03` |
-| 1      | `loginOkId1` | `i32`         |
-| 5      | `loginOkId2` | `i32`         |
+| Offset | Field          | Type        | Notes                                                |
+| ------ | -------------- | ----------- | ---------------------------------------------------- |
+| 0      | opcode         | `u8` = `0x03` |                                                    |
+| 1      | `loginOkId1`   | `i32`       | session token #1                                     |
+| 5      | `loginOkId2`   | `i32`       | session token #2                                     |
+| 9      | reserved       | `bytes[8]`  | observed all-zero                                    |
+| 17     | `accessLevel`  | `i32`       | observed `0x000003EA` for a normal account           |
+| 21     | trailing block | `bytes[35]` | mostly zeros plus a 7-byte tail used by L2J Mobius   |
 
-Both tokens must be remembered — they are sent in RequestServerList, RequestServerLogin, and later in the game AuthRequest.
+Total payload: **56 bytes** (Frame 11 in `good_sesion.txt`).
+
+A reimplementer only needs to keep `loginOkId1` and `loginOkId2`; everything
+from offset 9 onward is opaque and may be skipped.
 
 ### 4.6 ServerList (S→C, opcode `0x04`)
 
-| Offset   | Field             | Type                      |
-| -------- | ----------------- | ------------------------- |
-| 0        | opcode            | `u8` = `0x04`             |
-| 1        | `serverCount`     | `u8`                      |
-| 2        | reserved          | `u8`                      |
-| 3 + k·21 | server record `k` | see below (21 bytes each) |
+| Offset       | Field             | Type                      | Notes                                          |
+| ------------ | ----------------- | ------------------------- | ---------------------------------------------- |
+| 0            | opcode            | `u8` = `0x04`             |                                                |
+| 1            | `serverCount`     | `u8`                      |                                                |
+| 2            | `lastServerId`   | `u8`                      | id of the server the account last logged onto |
+| 3 + k·21     | server record `k` | see below (21 bytes each) |                                                |
+| 3 + N·21     | trailing block   | variable                  | per-server character counts and account flags |
 
 **Server record (21 bytes):**
 
@@ -464,7 +476,14 @@ Both tokens must be remembered — they are sent in RequestServerList, RequestSe
 | 16     | `flags`         | `i32`      | informational                                          |
 | 20     | reserved        | `u8`       |                                                        |
 
-The client selects the record whose `serverId` matches the configured `ServerId` and uses its `ip:port` for the Game Server connection.
+`good_sesion.txt` Frame 17 (1-server response, 40-byte body) shows a
+16-byte trailing block after the single record:
+`00 00 01 02 01 00 3e 2d 03 e0 67 16 7f 24 1c 0d`. This block holds the
+per-server character count summary and various L2J Mobius account flags.
+A reimplementer doing auto-login can ignore everything after the matched
+server record — the client selects the record whose `serverId` matches
+the configured `ServerId` and uses its `ip:port` for the Game Server
+connection.
 
 ### 4.7 PlayFail (S→C, opcode `0x06`)
 
@@ -485,81 +504,141 @@ Codes outside this set are logged as `Unknown reason (0x…)`. The legacy Interl
 
 ### 4.8 PlayOk (S→C, opcode `0x07`)
 
-| Offset | Field       | Type          |
-| ------ | ----------- | ------------- |
-| 0      | opcode      | `u8` = `0x07` |
-| 1      | `playOkId1` | `i32`         |
-| 5      | `playOkId2` | `i32`         |
+| Offset | Field          | Type        | Notes                                              |
+| ------ | -------------- | ----------- | -------------------------------------------------- |
+| 0      | opcode         | `u8` = `0x07` |                                                  |
+| 1      | `playOkId1`    | `i32`       | session token #3                                   |
+| 5      | `playOkId2`    | `i32`       | session token #4                                   |
+| 9      | trailing block | `bytes[7]`  | observed `i32 + i16 + u8` of opaque GG/queue data |
+
+Total payload: **16 bytes** (Frame 20 in `good_sesion.txt`).
 
 Both tokens must be remembered — they are sent later in the game AuthRequest.
+The trailing 7 bytes are not consumed by the auto-login flow.
 
 ### 4.9 GGAuth (S→C, opcode `0x0B`)
 
-| Offset | Field            | Type          |
-| ------ | ---------------- | ------------- |
-| 0      | opcode           | `u8` = `0x0B` |
-| 1      | `ggAuthResponse` | `i32`         |
+| Offset | Field            | Type        | Notes                                                |
+| ------ | ---------------- | ----------- | ---------------------------------------------------- |
+| 0      | opcode           | `u8` = `0x0B` |                                                    |
+| 1      | `ggAuthResponse` | `i32`       | echoes the `sessionId` from Init                     |
+| 5      | reserved         | `bytes[16]` | observed all-zero                                    |
+| 21     | GG nonce         | `bytes[11]` | per-session GameGuard payload, opaque to the client |
 
-The client must remember `ggAuthResponse` and echo it inside RequestAuthLogin.
+Total payload: **32 bytes** (Frame 8 in `good_sesion.txt`).
+
+In practice `ggAuthResponse == sessionId` on every L2J Mobius CT 2.6 capture
+— the reference Java server simply rewrites the first i32 of GGAuth to the
+sessionId. A reimplementer can therefore treat `ggAuthResponse` as a
+"keep-alive ack" and only needs the i32 itself; the trailing bytes are not
+required for the auto-login flow.
 
 ### 4.10 RequestAuthLogin (C→S, opcode `0x00`)
 
-Body size: **176 bytes** (before padding/encryption).
+Body size: **184 bytes** (before padding/encryption). After the §3.6
+encryption pipeline this becomes a 192-byte ciphertext + 2-byte length
+prefix = 194 bytes on the wire (matches Frame 10 in `good_sesion.txt`).
 
-| Offset | Field            | Type         | Size |
-| ------ | ---------------- | ------------ | ---- |
-| 0      | opcode           | `u8`         | 1    |
-| 1      | RSA ciphertext   | `bytes[128]` | 128  |
-| 129    | `ggAuthResponse` | `i32`        | 4    |
-| 133    | fixed GG block   | `bytes[43]`  | 43   |
+| Offset | Field             | Type         | Size | Notes                                              |
+| ------ | ----------------- | ------------ | ---- | -------------------------------------------------- |
+| 0      | opcode            | `u8`         | 1    | `0x00`                                             |
+| 1      | RSA ciphertext    | `bytes[128]` | 128  | computed per §3.4                                  |
+| 129    | `sessionId`       | `i32`        | 4    | echoed from Init                                   |
+| 133    | reserved          | `bytes[16]`  | 16   | observed all-zero                                  |
+| 149    | constant `0x08`   | `i32`        | 4    | observed `0x00000008` on every capture             |
+| 153    | reserved          | `bytes[3]`   | 3    | observed all-zero (note unaligned)                 |
+| 156    | GG random nonce   | `bytes[16]` | 16   | per-session 16-byte blob from the GameGuard layer  |
+| 172    | reserved          | `bytes[4]`   | 4    | observed all-zero                                  |
+| 176    | GG auth digest    | `i32`        | 4    | per-session i32 derived from the GameGuard challenge |
+| 180    | reserved          | `bytes[4]`   | 4    | observed all-zero                                  |
 
-The fixed GG block (hex):
+The 128-byte RSA ciphertext is computed per §3.4 from the login, password,
+and the unscrambled modulus from Init. The trailing 55 bytes after the
+ciphertext are GameGuard-related — L2J Mobius CT 2.6 does not validate
+them and accepts an all-zero blob, so a reimplementer that does not need
+to defeat real GameGuard may transmit zeros for everything from offset 129
+onward (the `l2py` reference client takes this shortcut).
+
+`good_sesion.txt` Frame 10 trailing 55 bytes (offsets 129..183), captured
+from a real official client:
 
 ```
-23 01 00 00 67 45 00 00 AB 89 00 00 EF CD 00 00
-08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-00 00 00 00 00 00 00 00 00 00 00
+c0 00 a0 1a 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 08 00 00 00 00 00 00 c1 d4 52 30
+ed 19 5f 2b d2 ed 9f e7 2b 31 04 39 00 00 00 00
+38 ee 4a 6a 00 00 00 00
 ```
-
-The 128-byte RSA ciphertext is computed per §3.4 from the login, password, and the unscrambled modulus from Init.
 
 ### 4.11 RequestServerLogin (C→S, opcode `0x02`)
 
-| Offset | Field        | Type          |
-| ------ | ------------ | ------------- |
-| 0      | opcode       | `u8` = `0x02` |
-| 1      | `loginOkId1` | `i32`         |
-| 5      | `loginOkId2` | `i32`         |
-| 9      | `serverId`   | `u8`          |
+Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes
+(Frame 19 in `good_sesion.txt`).
+
+| Offset | Field          | Type         | Notes                                              |
+| ------ | -------------- | ------------ | -------------------------------------------------- |
+| 0      | opcode         | `u8` = `0x02` |                                                  |
+| 1      | `loginOkId1`   | `i32`        | from LoginOk                                       |
+| 5      | `loginOkId2`   | `i32`        | from LoginOk                                       |
+| 9      | `serverId`     | `u8`         | id of the chosen Game Server                       |
+| 10     | reserved       | `bytes[6]`   | observed all-zero                                  |
+| 16     | GG checksum    | `i32`        | per-session GameGuard tag (observed `0x5E400B0F`) |
+| 20     | reserved       | `bytes[4]`   | observed all-zero                                  |
+
+The trailing 14 bytes (offsets 10..23) are GameGuard padding. L2J Mobius
+accepts a 10-byte body (just opcode+ids+serverId) as well — this is what
+the `l2py` reference client transmits.
 
 ### 4.12 RequestServerList (C→S, opcode `0x05`)
 
-| Offset | Field        | Type  | Value                 |
-| ------ | ------------ | ----- | --------------------- |
-| 0      | opcode       | `u8`  | `0x05`                |
-| 1      | `loginOkId1` | `i32` | from LoginOk          |
-| 5      | `loginOkId2` | `i32` | from LoginOk          |
-| 9      | `flags`      | `i32` | constant `0x04000000` |
+Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes
+(Frame 15 in `good_sesion.txt`).
+
+| Offset | Field          | Type         | Notes                                              |
+| ------ | -------------- | ------------ | -------------------------------------------------- |
+| 0      | opcode         | `u8` = `0x05` |                                                  |
+| 1      | `loginOkId1`   | `i32`        | from LoginOk                                       |
+| 5      | `loginOkId2`   | `i32`        | from LoginOk                                       |
+| 9      | constant `0x05`| `u8`         | observed `0x05` on every capture                   |
+| 10     | reserved       | `bytes[6]`   | observed all-zero                                  |
+| 16     | GG checksum    | `i32`        | per-session GameGuard tag (observed `0x5E400C08`) |
+| 20     | reserved       | `bytes[4]`   | observed all-zero                                  |
+
+The single byte at offset 9 is a flags/version marker — not the i32
+`0x04000000` that earlier specs of the Interlude protocol describe. The
+trailing 14 bytes (offsets 10..23) are GameGuard padding. L2J Mobius
+accepts a 10-byte body (just opcode+ids+`0x05`) as well — this is what
+the `l2py` reference client transmits.
 
 ### 4.13 RequestGGAuth (C→S, opcode `0x07`)
 
-Body size: **40 bytes** (before padding/encryption).
+Body size: **32 bytes** (before padding/encryption). Wire = 42 bytes
+(Frame 7 in `good_sesion.txt`).
 
-| Offset | Field       | Type        | Value        |
-| ------ | ----------- | ----------- | ------------ |
-| 0      | opcode      | `u8`        | `0x07`       |
-| 1      | `sessionId` | `i32`       | from Init    |
-| 5      | constant 1  | `i32`       | `0x00000123` |
-| 9      | constant 2  | `i32`       | `0x00004567` |
-| 13     | constant 3  | `i32`       | `0x000089AB` |
-| 17     | constant 4  | `i32`       | `0x0000CDEF` |
-| 21     | padding     | `bytes[19]` | zeros        |
+| Offset | Field            | Type         | Notes                                         |
+| ------ | ---------------- | ------------ | --------------------------------------------- |
+| 0      | opcode           | `u8`         | `0x07`                                        |
+| 1      | `sessionId`      | `i32`        | echoed from Init                              |
+| 5      | reserved         | `bytes[19]`  | observed all-zero                             |
+| 24     | GG client tag    | `i32`        | per-session GameGuard derivative              |
+| 28     | reserved         | `bytes[4]`   | observed all-zero                             |
+
+The 4-byte "GG client tag" at offset 24 is computed by the official
+client's GameGuard module from the `sessionId`. The captured value in
+Frame 7 was `0xA000C01D` for `sessionId = 0x1AA000C0` (sessionId rotated
+right one byte and the high byte XOR'd with `0x07`). L2J Mobius CT 2.6
+does not validate this tag and accepts an all-zero blob, so a
+reimplementer that does not need to defeat real GameGuard may transmit a
+21-byte body with just `opcode + sessionId + 16 zero bytes` (this is what
+the `l2py` reference client does).
+
+The four magic constants `0x123 / 0x4567 / 0x89AB / 0xCDEF` documented for
+older chronicles do **not** appear in HighFive captures.
 
 ### 4.14 Annotated hex dumps
 
 The dumps below are synthetic but internally consistent: every offset add-up can be verified by hand. They all show the **decrypted** body (so the `u16 LE` length prefix is omitted — prepend `len = body + 2` when framing). Use them to cross-check your serializer's offsets against the authoritative specification.
 
-**4.14.1 Init (S→C, `0x00`) — 170 bytes** (§4.3). The 128-byte scrambled RSA key and the 16-byte session Blowfish key are abbreviated as dotted runs for readability; both are opaque to the framer.
+**4.14.1 Init (S→C, `0x00`) — 184 bytes** (§4.3). The 128-byte scrambled RSA key and the 16-byte session Blowfish key are abbreviated as dotted runs for readability; both are opaque to the framer.
 
 ```
 00                                               ; opcode = 0x00
@@ -568,42 +647,50 @@ The dumps below are synthetic but internally consistent: every offset add-up can
 <128 bytes scrambledRsaKey>                      ; offsets 0x09..0x88
 <16 bytes reserved, ignored>                     ; offsets 0x89..0x98
 <16 bytes blowfishKey (session)>                 ; offsets 0x99..0xA8
-00                                               ; terminator (offset 0xA9)
+00 00 00 00 00 5B A8 44 F7 00 00 00 00 00 00     ; trailing block, offsets 0xA9..0xB7
 ```
 
-**4.14.2 LoginOk (S→C, `0x03`) — 9 bytes** (§4.5).
+**4.14.2 LoginOk (S→C, `0x03`) — 56 bytes** (§4.5).
 
 ```
 03                                               ; opcode = 0x03
 DD CC BB AA                                      ; loginOkId1 = 0xAABBCCDD
 44 33 22 11                                      ; loginOkId2 = 0x11223344
+00 00 00 00 00 00 00 00                          ; reserved (offsets 0x09..0x10)
+EA 03 00 00                                      ; accessLevel = 0x000003EA
+<31 trailing bytes — opaque>                     ; offsets 0x15..0x37
 ```
 
-**4.14.3 ServerList (S→C, `0x04`) with one record — 24 bytes** (§4.6).
+**4.14.3 ServerList (S→C, `0x04`) with one record — 40 bytes** (§4.6). The 16-byte trailing block is reproduced verbatim from `good_sesion.txt` Frame 17 (1-server response).
 
 ```
 04                                               ; opcode = 0x04
 01                                               ; serverCount = 1
-00                                               ; reserved
+02                                               ; lastServerId = 2
 
 ; --- server record 0 (21 bytes) ---
-01                                               ; serverId = 1
-7F 00 00 01                                      ; ip = 127.0.0.1 (bytes in display order)
+02                                               ; serverId = 2
+C0 A8 00 21                                      ; ip = 192.168.0.33 (bytes in display order)
 61 1E 00 00                                      ; port = 7777 (i32 LE)
 00                                               ; ageLimit
-00                                               ; isPvp = false
-32 00                                            ; onlinePlayers = 50 (u16 LE)
-88 13                                            ; maxPlayers    = 5000 (u16 LE)
+01                                               ; isPvp = true
+00 00                                            ; onlinePlayers = 0 (u16 LE)
+D0 07                                            ; maxPlayers    = 2000 (u16 LE)
 01                                               ; isOnline = true
-00 00 00 00                                      ; flags = 0 (i32 LE)
+40 00 00 00                                      ; flags = 0x40 (i32 LE)
 00                                               ; reserved
+
+; --- trailing block (16 bytes, opaque) ---
+00 00 01 02 01 00 3E 2D 03 E0 67 16 7F 24 1C 0D
 ```
 
-**4.14.4 GGAuth (S→C, `0x0B`) — 5 bytes** (§4.9).
+**4.14.4 GGAuth (S→C, `0x0B`) — 32 bytes** (§4.9).
 
 ```
 0B                                               ; opcode = 0x0B
-EF BE AD DE                                      ; ggAuthResponse = 0xDEADBEEF
+C0 00 A0 1A                                      ; ggAuthResponse echoes sessionId = 0x1AA000C0
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; 16 reserved zero bytes
+55 69 30 14 6F 79 17 AC F1 76 ad                 ; 11-byte GG nonce
 ```
 
 **4.14.5 LoginFail (S→C, `0x01`) — 2 bytes** (§4.4).
@@ -613,12 +700,13 @@ EF BE AD DE                                      ; ggAuthResponse = 0xDEADBEEF
 03                                               ; reason = 0x03 "Wrong login or password"
 ```
 
-**4.14.6 PlayOk (S→C, `0x07`) — 9 bytes** (§4.8).
+**4.14.6 PlayOk (S→C, `0x07`) — 16 bytes** (§4.8).
 
 ```
 07                                               ; opcode = 0x07
 78 56 34 12                                      ; playOkId1 = 0x12345678
 F0 DE BC 9A                                      ; playOkId2 = 0x9ABCDEF0
+<7 trailing bytes — opaque GG/queue data>        ; offsets 0x09..0x0F
 ```
 
 **4.14.7 PlayFail (S→C, `0x06`) — 5 bytes** (§4.7). Note the `i32` reason, not `u8`.
@@ -628,49 +716,59 @@ F0 DE BC 9A                                      ; playOkId2 = 0x9ABCDEF0
 0F 00 00 00                                      ; reason = 0x0F "Too many players"
 ```
 
-**4.14.8 RequestAuthLogin (C→S, `0x00`) — 176 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the GG block is a fixed 43-byte blob shown in full.
+**4.14.8 RequestAuthLogin (C→S, `0x00`) — 184 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the trailing 55 bytes shown below are reproduced verbatim from `good_sesion.txt` Frame 10.
 
 ```
 00                                               ; opcode = 0x00
 <128 bytes RSA ciphertext>                       ; offsets 0x01..0x80
-EF BE AD DE                                      ; ggAuthResponse echo (from GGAuth)
-23 01 00 00 67 45 00 00 AB 89 00 00 EF CD 00 00  ; GG fixed block, bytes 0x85..0x94
-08 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; bytes 0x95..0xA4
-00 00 00 00 00 00 00 00 00 00 00                 ; bytes 0xA5..0xAF
+C0 00 A0 1A                                      ; sessionId echo (offset 0x81)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; reserved (offsets 0x85..0x94)
+08 00 00 00                                      ; constant 0x08 (offset 0x95)
+00 00 00                                         ; reserved 3 bytes (offsets 0x99..0x9B)
+C1 D4 52 30 ED 19 5F 2B D2 ED 9F E7 2B 31 04 39  ; GG random nonce (0x9C..0xAB)
+00 00 00 00                                      ; reserved (0xAC..0xAF)
+38 EE 4A 6A                                      ; GG auth digest (0xB0..0xB3)
+00 00 00 00                                      ; reserved (0xB4..0xB7)
 ```
 
-**4.14.9 RequestGGAuth (C→S, `0x07`) — 40 bytes, pre-encryption** (§4.13).
+**4.14.9 RequestGGAuth (C→S, `0x07`) — 32 bytes, pre-encryption** (§4.13).
 
 ```
 07                                               ; opcode = 0x07
-44 33 22 11                                      ; sessionId echo = 0x11223344
-23 01 00 00                                      ; const 1 = 0x00000123
-67 45 00 00                                      ; const 2 = 0x00004567
-AB 89 00 00                                      ; const 3 = 0x000089AB
-EF CD 00 00                                      ; const 4 = 0x0000CDEF
-00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; 16 zero bytes of padding
-00 00 00                                         ; 3 more zero bytes (total 19 zero pad)
+C0 00 A0 1A                                      ; sessionId echo = 0x1AA000C0
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ; 16 zero bytes (offsets 0x05..0x14)
+00 00 00                                         ; 3 more zero bytes (offsets 0x15..0x17)
+1D C0 00 A0                                      ; GG client tag (offset 0x18)
+00 00 00 00                                      ; reserved (offsets 0x1C..0x1F)
 ```
 
-**4.14.10 RequestServerList (C→S, `0x05`) — 13 bytes, pre-encryption** (§4.12).
+**4.14.10 RequestServerList (C→S, `0x05`) — 24 bytes, pre-encryption** (§4.12).
 
 ```
 05                                               ; opcode = 0x05
-DD CC BB AA                                      ; loginOkId1 = 0xAABBCCDD
-44 33 22 11                                      ; loginOkId2 = 0x11223344
-00 00 00 04                                      ; flags = 0x04000000 (i32 LE)
+0B 2C 55 DF                                      ; loginOkId1 = 0xDF552C0B
+02 6C 0B D2                                      ; loginOkId2 = 0xD20B6C02
+05                                               ; constant 0x05 (offset 0x09)
+00 00 00 00 00 00                                ; reserved (offsets 0x0A..0x0F)
+08 0C 40 5E                                      ; GG checksum (offset 0x10)
+00 00 00 00                                      ; reserved (offsets 0x14..0x17)
 ```
 
-**4.14.11 RequestServerLogin (C→S, `0x02`) — 10 bytes, pre-encryption** (§4.11).
+**4.14.11 RequestServerLogin (C→S, `0x02`) — 24 bytes, pre-encryption** (§4.11).
 
 ```
 02                                               ; opcode = 0x02
-DD CC BB AA                                      ; loginOkId1
-44 33 22 11                                      ; loginOkId2
-01                                               ; serverId = 1
+0B 2C 55 DF                                      ; loginOkId1 = 0xDF552C0B
+02 6C 0B D2                                      ; loginOkId2 = 0xD20B6C02
+02                                               ; serverId = 2
+00 00 00 00 00 00                                ; reserved (offsets 0x0A..0x0F)
+0F 0B 40 5E                                      ; GG checksum (offset 0x10)
+00 00 00 00                                      ; reserved (offsets 0x14..0x17)
 ```
 
-All C→S login bodies above are then padded and encrypted per §3.6 before being framed with a `u16 LE` length.
+All C→S login bodies above are then padded and encrypted per §3.6 before
+being framed with a `u16 LE` length. The exact 4-byte GG blobs differ per
+session — they are shown here only to anchor the field offsets.
 
 ---
 
@@ -724,10 +822,16 @@ Every multi-byte field below is little-endian. Opcodes are the first byte of the
 
 #### 5.3.1 ProtocolVersion (C→S, opcode `0x0E`) — plaintext
 
-| Offset | Field      | Type  | Value  |
-| ------ | ---------- | ----- | ------ |
-| 0      | opcode     | `u8`  | `0x0E` |
-| 1      | `protocol` | `i32` | `273`  |
+| Offset | Field          | Type         | Value  |
+| ------ | -------------- | ------------ | ------ |
+| 0      | opcode         | `u8`         | `0x0E` |
+| 1      | `protocol`     | `i32`        | `273`  |
+| 5      | trailing block | `bytes[260]` | client build-info / hardware fingerprint, opaque |
+
+L2J Mobius CT 2.6 only consumes the first 5 bytes. The official client
+nonetheless sends a 265-byte body (`good_sesion.txt` Frame 28, 267 bytes
+on the wire). A reimplementer may transmit only the 5-byte minimum form
+— the `l2py` reference client does this and the server accepts it.
 
 #### 5.3.2 CryptInit (S→C, opcode `0x2E`) — plaintext
 
@@ -749,16 +853,22 @@ The reference client passes `encryptionFlag` directly into its crypt layer (`thi
 
 #### 5.3.3 AuthRequest (C→S, opcode `0x2B`) — first packet after CryptInit (encrypted iff `CryptInit.encryptionFlag ≠ 0`)
 
-| Offset | Field        | Type  | Notes                            |
-| ------ | ------------ | ----- | -------------------------------- |
-| 0      | opcode       | `u8`  | `0x2B`                           |
-| 1      | `username`   | `str` | UTF-16LE, 2-byte null terminator |
-| var    | `playOkId2`  | `i32` | **note the swapped order**       |
-| var+4  | `playOkId1`  | `i32` |                                  |
-| var+8  | `loginOkId1` | `i32` |                                  |
-| var+12 | `loginOkId2` | `i32` |                                  |
+| Offset | Field          | Type        | Notes                                           |
+| ------ | -------------- | ----------- | ----------------------------------------------- |
+| 0      | opcode         | `u8`        | `0x2B`                                          |
+| 1      | `username`     | `str`       | UTF-16LE, 2-byte null terminator                |
+| var    | `playOkId2`    | `i32`       | **note the swapped order**                      |
+| var+4  | `playOkId1`    | `i32`       |                                                 |
+| var+8  | `loginOkId1`   | `i32`       |                                                 |
+| var+12 | `loginOkId2`   | `i32`       |                                                 |
+| var+16 | trailing block | `bytes[16]` | observed `01 00 00 00 15 02 00 00 00 …` (opaque) |
 
-**The field order `play2, play1, login1, login2` is mandatory** — getting it wrong silently breaks auth on L2J Mobius.
+**The field order `play2, play1, login1, login2` is mandatory** — getting
+it wrong silently breaks auth on L2J Mobius. The 16-byte trailing block
+is sent by the official client (verified in `good_sesion.txt` Frame 30,
+49-byte body for `username = "qwerty"`); L2J Mobius does not read past
+`loginOkId2`, so a reimplementer may omit the trailer entirely (the
+`l2py` reference client does).
 
 #### 5.3.4 CharSelectionInfo (S→C, opcode `0x09`)
 
@@ -992,9 +1102,10 @@ rsaModulus = unscramble_rsa_key(scrambledRsaKey)  # §3.4
 currentLoginKey = sessionBlowfishKey              # switch from static to session key
 
 # --- RequestGGAuth (0x07) ---
-body = bytes([0x07]) + i32_le(sessionId)
-     + i32_le(0x123) + i32_le(0x4567) + i32_le(0x89AB) + i32_le(0xCDEF)
-     + zeros(19)                                   # body = 40 bytes
+# 32-byte body: opcode + sessionId + 19 zeros + GG client tag + 4 zeros.
+# L2J Mobius accepts an all-zero GG tag, so a minimal client may send
+# bytes([0x07]) + i32_le(sessionId) + zeros(16) and stop after 21 bytes.
+body = bytes([0x07]) + i32_le(sessionId) + zeros(19) + i32_le(0) + zeros(4)
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
@@ -1003,10 +1114,16 @@ assert gg[0] == 0x0B
 ggAuthResponse = i32_le(gg[1:5])
 
 # --- RequestAuthLogin (0x00) ---
+# 184-byte body: opcode + 128-byte RSA + sessionId + 16 zeros + i32(8) +
+# 3 zeros + 16-byte GG nonce + 4 zeros + i32 GG digest + 4 zeros.
+# L2J Mobius accepts an all-zero trailer, so a minimal client may send
+# bytes([0x00]) + rsaCipher + i32_le(0) + i32_le(0) + zeros(8) (137 bytes).
 plaintext = zeros(94) + ascii_right_padded(username, 14) + zeros(2)
           + ascii_right_padded(password, 16) + zeros(2)               # 128 bytes
 rsaCipher = rsa_encrypt_no_padding(plaintext, rsaModulus, e=65537)    # 128 bytes
-body = bytes([0x00]) + rsaCipher + i32_le(ggAuthResponse) + GG_FIXED_BLOCK_43
+body = bytes([0x00]) + rsaCipher
+     + i32_le(sessionId) + zeros(16) + i32_le(8) + zeros(3)
+     + zeros(16) + zeros(4) + i32_le(0) + zeros(4)
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
@@ -1017,7 +1134,10 @@ loginOkId1 = i32_le(ok[1:5])
 loginOkId2 = i32_le(ok[5:9])
 
 # --- RequestServerList (0x05) ---
-body = bytes([0x05]) + i32_le(loginOkId1) + i32_le(loginOkId2) + i32_le(0x04000000)
+# 24-byte body. The single byte 0x05 at offset 9 is a flag/version marker;
+# the trailing 14 bytes are GG-related and may be zero on Mobius.
+body = bytes([0x05]) + i32_le(loginOkId1) + i32_le(loginOkId2)
+     + bytes([0x05]) + zeros(6) + i32_le(0) + zeros(4)
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
@@ -1034,7 +1154,9 @@ chosen = first(s for s in servers if s.serverId == targetServerId)
 if chosen is None: abort("ServerId not found")
 
 # --- RequestServerLogin (0x02) ---
-body = bytes([0x02]) + i32_le(loginOkId1) + i32_le(loginOkId2) + bytes([chosen.serverId])
+# 24-byte body: opcode + ids + serverId + 6 zeros + i32 GG checksum + 4 zeros.
+body = bytes([0x02]) + i32_le(loginOkId1) + i32_le(loginOkId2)
+     + bytes([chosen.serverId]) + zeros(6) + i32_le(0) + zeros(4)
 send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
@@ -1119,7 +1241,33 @@ loop forever:
 
 The reference implementation reads these from environment variables (`L2_USERNAME`, `L2_PASSWORD`, `L2_LOGIN_IP`, `L2_LOGIN_PORT`, `L2_PROTOCOL`, `L2_SERVER_ID`, `L2_CHAR_SLOT`). A reimplementer can use any equivalent source.
 
-### 6.4 Error handling expected from a correct client
+### 6.4 Capture cross-reference
+
+All packet sizes and trailing-block hex strings in §4 were verified by
+decrypting `good_sesion.txt` (an L2 official client ↔ L2J Mobius CT 2.6
+HighFive capture). Frame map:
+
+| Frame | Direction | Wire | Body | Section | Notes                                |
+| ----- | --------- | ---- | ---- | ------- | ------------------------------------ |
+| 6     | S→C       | 196  | 184  | §4.3    | Init                                 |
+| 7     | C→S       | 42   | 32   | §4.13   | RequestGGAuth                        |
+| 8     | S→C       | 42   | 32   | §4.9    | GGAuth (i32 echoes sessionId)        |
+| 10    | C→S       | 194  | 184  | §4.10   | RequestAuthLogin                     |
+| 11    | S→C       | 66   | 56   | §4.5    | LoginOk                              |
+| 15    | C→S       | 34   | 24   | §4.12   | RequestServerList                    |
+| 17    | S→C       | 50   | 40   | §4.6    | ServerList (1 record + 16-byte tail) |
+| 19    | C→S       | 34   | 24   | §4.11   | RequestServerLogin                   |
+| 20    | S→C       | 26   | 16   | §4.8    | PlayOk                               |
+| 28    | C→S       | 267  | 265  | §5.3.1  | ProtocolVersion + 260-byte client tail (server reads only the first 5 bytes) |
+| 29    | S→C       | 25   | 23   | §5.3.2  | CryptInit (plaintext, `encryptionFlag = 0`) |
+| 30    | C→S       | 49   | 47   | §5.3.3  | AuthRequest (`username="qwerty"`, includes 16-byte trailer) |
+| 33    | C→S       | 21   | 19   | §5.3.5  | CharacterSelected                    |
+
+Body sizes are derived as `wire − 2` for plaintext frames and as
+`wire − 2 − pad` for login-encrypted frames, where `pad` is the
+4-/8-byte alignment from §3.6.
+
+### 6.5 Error handling expected from a correct client
 
 - **Wrong credentials** → LoginFail (`0x01`) with reason code (full table in §4.4); abort.
 - **Server not in list** → no record matches `serverId`; abort before sending RequestServerLogin.
@@ -1142,8 +1290,15 @@ Use this list when porting to a new language. Tick every box to have a working a
 - [ ] Login-packet padding: 4-byte align → +8 zeros → 8-byte align → write checksum → Blowfish encrypt.
 - [ ] RSA modulus unscrambler (C^-1, B^-1, A^-1, D^-1 in that order).
 - [ ] RSA-1024 encryption with `RSA_NO_PADDING`, exponent 65537, 128-byte plaintext layout (94 / 14 login / 2 / 16 password / 2).
-- [ ] Login state machine with all 7 packets (§4.3 — §4.13).
-- [ ] ServerList parsing with 21-byte records (§4.6).
+- [ ] Login state machine with all 7 packets (§4.3 — §4.13). On HighFive
+      L2J Mobius, body sizes are: Init 184, GGAuth 32 (only first i32
+      matters), LoginOk 56 (only first 9 bytes matter), ServerList
+      3+N·21+trailer, PlayOk 16 (only first 9 bytes matter), RequestGGAuth
+      32 (or 21 minimal), RequestAuthLogin 184 (or 137 minimal),
+      RequestServerList 24 (or 10 minimal), RequestServerLogin 24 (or 10
+      minimal).
+- [ ] ServerList parsing with 21-byte records (§4.6); skip the trailing
+      block — it is per-server character counts that auto-login does not need.
 - [ ] Transition to Game Server using `gameServerIp:gameServerPort` from the matched ServerList record.
 - [ ] Game packet framing same as login; XOR cipher only after CryptInit.
 - [ ] Static game XOR tail `C8 27 93 01 A1 6C 31 97`.
@@ -1170,9 +1325,9 @@ Use this list when porting to a new language. Tick every box to have a working a
 | Expected Init protocol revision   | `0x0000C621`                                                   | Init (§4.3)              |
 | Static login Blowfish key         | `6B 60 CB 5B 82 CE 90 B1 CC 2B 6C 55 6C 6C 6C 6C`              | Init decryption (§3.5)   |
 | Static game XOR tail              | `C8 27 93 01 A1 6C 31 97`                                      | XOR key (§3.7)           |
-| RequestServerList flags           | `0x04000000`                                                   | §4.12                    |
-| RequestGGAuth constants           | `0x00000123`, `0x00004567`, `0x000089AB`, `0x0000CDEF`         | §4.13                    |
-| RequestAuthLogin fixed GG block   | 43 bytes starting `23 01 00 00 67 45 00 00 AB 89 ...`          | §4.10                    |
+| RequestServerList marker byte     | `0x05` at body offset 9 (HighFive)                             | §4.12                    |
+| RequestGGAuth body shape          | 32 bytes; opcode + sessionId + 19 zeros + i32 GG tag + 4 zeros | §4.13                    |
+| RequestAuthLogin body shape       | 184 bytes; opcode + 128-byte RSA + 55-byte GG trailer          | §4.10                    |
 | RSA plaintext layout              | 94 zero / 14 login / 2 zero / 16 password / 2 zero = 128 bytes | §3.4                     |
 | RSA public exponent               | `65537` (`0x10001`)                                            | §3.4                     |
 | CharacterSelected padding         | 14 zero bytes after `slotIndex`                                | §5.3.5                   |
