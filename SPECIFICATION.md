@@ -166,9 +166,8 @@ The server sends a scrambled 128-byte RSA public modulus inside the Init packet.
 | ------ | ---- | ----------------------------------------------------------------------------- |
 | `0x00` | 94   | zeros                                                                         |
 | `0x5E` | 14   | login, ASCII, null-padded (no null terminator required, the padding is zeros) |
-| `0x6C` | 2    | zeros (separator)                                                             |
-| `0x6E` | 16   | password, ASCII, null-padded                                                  |
-| `0x7E` | 2    | zeros                                                                         |
+| `0x6C` | 16   | password, ASCII, null-padded (immediately follows login, no separator)        |
+| `0x7C` | 4    | zeros                                                                         |
 
 **Unscrambling the modulus.** The Init packet's 128-byte `scrambledRsaKey` must be unscrambled with this sequence of in-place operations (in exactly this order):
 

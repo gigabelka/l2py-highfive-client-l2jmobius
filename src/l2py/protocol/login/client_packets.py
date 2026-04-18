@@ -39,11 +39,12 @@ class AuthGameGuardPacket(ClientPacket):
 class RequestAuthLoginPacket(ClientPacket):
     """Пакет авторизации C/0x00.
 
-    Содержит логин и пароль, зашифрованные RSA.
+    Содержит логин и пароль, зашифрованные RSA, плюс sessionId и нулевой
+    GameGuard-блок. Полный формат — см. SPECIFICATION.md §4.10 (тело 184 байта).
     """
 
     opcode: ClassVar[int] = 0x00
-    __slots__ = ("username", "password", "session_id", "rsa", "login_ok1", "login_ok2")
+    __slots__ = ("username", "password", "session_id", "rsa")
 
     def __init__(
         self,
@@ -51,54 +52,53 @@ class RequestAuthLoginPacket(ClientPacket):
         password: str,
         session_id: int,
         rsa: L2RSA,
-        login_ok1: int = 0,
-        login_ok2: int = 0,
     ) -> None:
         """Инициализация пакета.
 
         Args:
             username: Логин пользователя.
             password: Пароль пользователя.
-            session_id: ID сессии.
+            session_id: ID сессии (echoed из Init).
             rsa: RSA-объект для шифрования.
-            login_ok1: Первый ключ сессии (пока 0).
-            login_ok2: Второй ключ сессии (пока 0).
         """
         self.username = username
         self.password = password
         self.session_id = session_id
         self.rsa = rsa
-        self.login_ok1 = login_ok1
-        self.login_ok2 = login_ok2
         super().__init__()
 
     def _write(self) -> None:
         """Записывает поля пакета.
 
-        Формат блока для RSA-шифрования (старый метод, 128 байт):
-        - [0x5E..0x6B] = username (14 байт, дополнен пробелами/нулем)
-        - [0x6C..0x7B] = password (16 байт)
+        Формат блока для RSA-шифрования (128 байт):
+        - [0x5E..0x6B] = username (14 байт, ASCII, null-padded)
+        - [0x6C..0x7B] = password (16 байт, ASCII, null-padded)
+
+        Тело пакета — 184 байта по SPECIFICATION.md §4.10:
+        opcode(1) + RSA(128) + sessionId(4) + reserved(16) + 0x08(4) +
+        reserved(3) + GG nonce(16) + reserved(4) + GG digest(4) + reserved(4).
+        L2J Mobius CT 2.6 принимает GameGuard-поля заполненными нулями.
         """
 
         block = bytearray(128)
 
-
         username_bytes = self.username.encode("ascii")[:14]
         block[0x5E : 0x5E + len(username_bytes)] = username_bytes
-
 
         password_bytes = self.password.encode("ascii")[:16]
         block[0x6C : 0x6C + len(password_bytes)] = password_bytes
 
-
         encrypted = self.rsa.encrypt(bytes(block))
 
-
         self._writer.write_bytes(encrypted)
-        self._writer.write_int32(self.login_ok1)
-        self._writer.write_int32(self.login_ok2)
-
-        self._writer.write_bytes(b"\x00" * 8)
+        self._writer.write_int32(self.session_id)
+        self._writer.write_bytes(b"\x00" * 16)
+        self._writer.write_int32(0x00000008)
+        self._writer.write_bytes(b"\x00" * 3)
+        self._writer.write_bytes(b"\x00" * 16)
+        self._writer.write_bytes(b"\x00" * 4)
+        self._writer.write_int32(0)
+        self._writer.write_bytes(b"\x00" * 4)
 
 
 class RequestServerListPacket(ClientPacket):

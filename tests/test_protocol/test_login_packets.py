@@ -120,7 +120,8 @@ class TestClientPackets:
     def test_request_auth_login_packet(self):
         """Тест RequestAuthLogin пакета."""
 
-        modulus = b"\x00" * 128
+
+        modulus = b"\xFF" + b"\x00" * 126 + b"\x01"
         rsa = L2RSA(modulus)
 
         packet = RequestAuthLoginPacket(
@@ -133,7 +134,11 @@ class TestClientPackets:
 
 
         assert data[0] == 0x00
-        assert len(data) == 1 + 128 + 4 + 4 + 8
+
+        assert len(data) == 184
+
+        assert data[129:133] == (12345).to_bytes(4, "little", signed=True)
+        assert data[149:153] == (0x00000008).to_bytes(4, "little")
 
     def test_request_server_list_packet(self):
         """Тест RequestServerList пакета."""
