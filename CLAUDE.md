@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **l2py** is an asyncio client for Lineage 2 High Five chronicle, targeting an **L2JMobius CT 2.6** server. It implements the full L2 wire protocol: RSA-scrambled login auth, Blowfish-wrapped login packets, XOR-based game packets, typed packet classes for both Login and Game servers, and orchestration flows that drive a session from TCP connect through world entry. Requires **Python 3.14+**.
 
+**Status:** Alpha. Login flow is complete end-to-end through `EnterWorld`; in-world game actions (move, attack, skills) are not yet implemented.
+
 The authoritative protocol reference is [SPECIFICATION.md](SPECIFICATION.md) — consult it before changing packet layouts, crypto, or framing. It documents wire format, opcodes, key derivation, and the exact packet sequences for both phases. Do not guess protocol behavior; cross-check against the spec.
 
 ## Commands
