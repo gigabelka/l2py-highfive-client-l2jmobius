@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Пакеты от клиента к Login Server.
 
 Содержит все пакеты, которые клиент отправляет на Login Server
@@ -32,7 +32,7 @@ class AuthGameGuardPacket(ClientPacket):
     def _write(self) -> None:
         """Записывает поля пакета."""
         self._writer.write_int32(self.session_id)
-        # GameGuard данные (16 нулей)
+
         self._writer.write_bytes(b"\x00" * 16)
 
 
@@ -74,30 +74,30 @@ class RequestAuthLoginPacket(ClientPacket):
 
     def _write(self) -> None:
         """Записывает поля пакета.
-        
+
         Формат блока для RSA-шифрования (старый метод, 128 байт):
         - [0x5E..0x6B] = username (14 байт, дополнен пробелами/нулем)
         - [0x6C..0x7B] = password (16 байт)
         """
-        # Формируем 128-байтный блок для RSA-шифрования
+
         block = bytearray(128)
 
-        # Имя пользователя: смещение 0x5E (94), макс 14 байт
+
         username_bytes = self.username.encode("ascii")[:14]
         block[0x5E : 0x5E + len(username_bytes)] = username_bytes
 
-        # Пароль: смещение 0x6C (108), макс 16 байт
+
         password_bytes = self.password.encode("ascii")[:16]
         block[0x6C : 0x6C + len(password_bytes)] = password_bytes
 
-        # RSA-шифрование
+
         encrypted = self.rsa.encrypt(bytes(block))
 
-        # Записываем в пакет
+
         self._writer.write_bytes(encrypted)
         self._writer.write_int32(self.login_ok1)
         self._writer.write_int32(self.login_ok2)
-        # GameGuard данные (8 нулей)
+
         self._writer.write_bytes(b"\x00" * 8)
 
 
@@ -122,7 +122,7 @@ class RequestServerListPacket(ClientPacket):
         """Записывает поля пакета."""
         self._writer.write_uint32(self.login_ok1)
         self._writer.write_uint32(self.login_ok2)
-        # Неизвестный байт (всегда 0x05)
+
         self._writer.write_byte(0x05)
 
 

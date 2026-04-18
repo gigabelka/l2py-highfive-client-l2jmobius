@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """TCP-соединение с Game Server.
 
 Асинхронное соединение с использованием asyncio.
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 300.0  # seconds (5 minutes)
+DEFAULT_TIMEOUT = 300.0
 
 
 class GameConnection:
@@ -85,7 +85,7 @@ class GameConnection:
             raise ConnectionError("Not connected")
 
         try:
-            # Читаем длину (2 байта, uint16 LE)
+
             length_bytes = await asyncio.wait_for(
                 self._reader.readexactly(2),
                 timeout=DEFAULT_TIMEOUT,
@@ -95,16 +95,16 @@ class GameConnection:
             if length < 2:
                 raise ConnectionError(f"Invalid packet length: {length}")
 
-            # Читаем тело пакета
+
             body = await asyncio.wait_for(
                 self._reader.readexactly(length - 2),
                 timeout=DEFAULT_TIMEOUT,
             )
 
-            # Дешифруем, _crypt сам проверит enabled
+
             decrypted = self._crypt.decrypt(body)
 
-            # Первый байт = opcode
+
             opcode = decrypted[0]
             data = decrypted[1:]
 
@@ -134,20 +134,20 @@ class GameConnection:
         if not self._connected or self._writer is None:
             raise ConnectionError("Not connected")
 
-        # Сериализуем пакет
+
         data = packet.to_bytes()
 
-        # Шифруем если не raw
+
         if raw:
             encrypted = data
         else:
             encrypted = self._crypt.encrypt(data)
 
-        # Формируем пакет с длиной
+
         length = len(encrypted) + 2
         packet_bytes = length.to_bytes(2, "little") + encrypted
 
-        # Отправляем
+
         self._writer.write(packet_bytes)
         await self._writer.drain()
 

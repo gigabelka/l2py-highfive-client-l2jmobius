@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
+
 """Пример входа в игру Lineage 2."""
 
 import asyncio
@@ -12,12 +12,12 @@ from l2py.network.game_flow import GameError
 
 async def main() -> int:
     """Основная функция.
-    
+
     Returns:
         0 при успехе, 1 при ошибке.
     """
     client = L2Client()
-    
+
     try:
         session = await client.enter(
             username="qwerty",
@@ -40,27 +40,27 @@ async def main() -> int:
         finally:
             await session.connection.close()
         return 0
-        
+
     except LoginError as e:
         print(f"[ERROR] {e}")
         if "already in use" in str(e).lower():
             print("   [HINT] Wait a few seconds and try again.")
         return 1
-        
+
     except GameError as e:
         print(f"[ERROR] {e}")
         return 1
-        
+
     except asyncio.TimeoutError:
         print("[ERROR] Connection timeout. Server is not responding.")
         print("   [HINT] Check that the server is running and accessible.")
         return 1
-        
+
     except ConnectionError as e:
         print(f"[ERROR] Connection error: {e}")
         print("   [HINT] Check server address and port.")
         return 1
-        
+
     except Exception as e:
         print(f"[ERROR] {e}")
         print("   [HINT] Enable debug mode for diagnostics.")

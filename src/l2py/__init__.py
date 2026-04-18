@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """l2py — asyncio-клиент для Lineage 2 High Five (L2JMobius).
 
 Проект реализует полный login flow:
@@ -44,19 +44,19 @@ from l2py.protocol import ClientPacket, PacketReader, PacketWriter, ServerPacket
 __version__ = "0.1.0"
 
 __all__ = [
-    # Main client
+
     "L2Client",
-    # Config
+
     "LoginConfig",
     "Credentials",
     "ConnectionConfig",
-    # Crypto
+
     "L2Blowfish",
     "LoginCrypt",
     "GameCrypt",
     "L2RSA",
     "unscramble_modulus",
-    # Network
+
     "LoginConnection",
     "GameConnection",
     "LoginFlow",
@@ -66,15 +66,15 @@ __all__ = [
     "GameFlow",
     "GameSession",
     "GameError",
-    # Protocol
+
     "PacketReader",
     "PacketWriter",
     "ServerPacket",
     "ClientPacket",
-    # Models
+
     "GameServer",
     "CharacterInfo",
-    # Events
+
     "EventEmitter",
     "EventMixin",
     "LoggedInEvent",

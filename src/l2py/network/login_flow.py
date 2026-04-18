@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Оркестрация процесса авторизации на Login Server.
 
 Реализует полный flow от подключения до получения PlayOk.
@@ -30,7 +30,7 @@ from l2py.protocol.login.server_packets import (
 
 logger = logging.getLogger(__name__)
 
-# Коды ошибок авторизации
+
 LOGIN_FAIL_REASONS = {
     0x01: "Account does not exist",
     0x02: "Password is incorrect",
@@ -117,7 +117,7 @@ class LoginFlow:
             LoginError: Если авторизация не удалась.
             ConnectionError: Если проблемы с соединением.
         """
-        # Создаём криптографию с поддержкой L2JMobius и соединение
+
         crypt = create_login_crypt_for_l2jmobius()
         conn = LoginConnection(
             self._config.host,
@@ -130,7 +130,7 @@ class LoginFlow:
             await conn.connect()
             logger.info(f"Starting login flow for user: {self._credentials.username}")
 
-            # Шаг 1: Получаем Init пакет
+
             logger.debug("Waiting for Init packet...")
             init = await self._wait_for_packet(conn, InitPacket)
             logger.debug(
@@ -138,26 +138,26 @@ class LoginFlow:
                 f"protocol_version={init.protocol_version}"
             )
 
-            # Устанавливаем сессионный Blowfish-ключ
+
             crypt.set_key(init.blowfish_key)
 
-            # Создаём RSA с автоматическим выбором алгоритма дескремблирования для L2JMobius
+
             rsa = create_l2rsa_with_auto_descramble(init.rsa_key)
             logger.debug("Using auto-descrambling RSA for L2JMobius compatibility")
 
-            # Шаг 2: Отправляем AuthGameGuard
+
             logger.debug("Sending AuthGameGuard...")
             await conn.send_packet(AuthGameGuardPacket(init.session_id))
 
-            # Шаг 3: Ждём GGAuth
+
             logger.debug("Waiting for GGAuth...")
             gg_auth = await self._wait_for_packet(conn, GGAuthPacket)
             logger.debug(f"GGAuth received: response=0x{gg_auth.response:08X} ({gg_auth.response})")
-            # L2JMobius возвращает session_id как response (проверено в коде сервера)
-            # Считаем успешным любой ответ, главное что пакет пришёл с opcode 0x0B
+
+
             logger.debug("GGAuth successful")
 
-            # Шаг 4: Отправляем RequestAuthLogin
+
             logger.debug("Sending RequestAuthLogin...")
             await conn.send_packet(
                 RequestAuthLoginPacket(
@@ -168,7 +168,7 @@ class LoginFlow:
                 )
             )
 
-            # Шаг 5: Ждём LoginOk или LoginFail
+
             logger.debug("Waiting for LoginOk...")
             opcode, data = await conn.read_packet()
 
@@ -188,7 +188,7 @@ class LoginFlow:
                 f"login_ok2={login_ok.login_ok2}"
             )
 
-            # Шаг 6: Запрашиваем список серверов
+
             logger.debug("Requesting server list...")
             await conn.send_packet(
                 RequestServerListPacket(
@@ -197,18 +197,18 @@ class LoginFlow:
                 )
             )
 
-            # Шаг 7: Получаем список серверов
+
             logger.debug("Waiting for ServerList...")
             server_list = await self._wait_for_packet(conn, ServerListPacket)
             logger.debug(f"Received {len(server_list.servers)} servers")
 
-            # Выбираем сервер
+
             server = self._select_server(server_list.servers)
             if server is None:
                 raise LoginError(0xFF, f"Server with ID not found")
             logger.info(f"Selected server: {server.ip}:{server.port}")
 
-            # Шаг 8: Отправляем RequestServerLogin
+
             logger.debug(f"Requesting login to server {server.id}...")
             await conn.send_packet(
                 RequestServerLoginPacket(
@@ -218,7 +218,7 @@ class LoginFlow:
                 )
             )
 
-            # Шаг 9: Получаем PlayOk
+
             logger.debug("Waiting for PlayOk...")
             play_ok = await self._wait_for_packet(conn, PlayOkPacket)
             logger.info(
@@ -254,28 +254,28 @@ class LoginFlow:
             LoginError: Если получен другой пакет.
         """
         try:
-            # Читаем пакет с передачей ожидаемого опкода для диагностики
+
             opcode, data = await conn.read_packet(expected_opcode=packet_class.opcode)
 
-            # Проверяем на LoginFail
+
             if opcode == LoginFailPacket.opcode:
                 fail = LoginFailPacket(data)
                 reason_desc = LOGIN_FAIL_REASONS.get(fail.reason, f"Unknown error {fail.reason}")
                 logger.error(f"Login failed: {reason_desc} (code: 0x{fail.reason:02X})")
                 raise LoginError(fail.reason)
 
-            # Проверяем соответствие ожидаемому опкоду
+
             if opcode != packet_class.opcode:
                 packet_name = packet_class.__name__ if hasattr(packet_class, '__name__') else "Unknown"
 
-                # Детальное логирование ошибки
+
                 error_msg = (
                     f"Packet type mismatch: expected {packet_name} (0x{packet_class.opcode:02X}), "
                     f"got opcode 0x{opcode:02X}"
                 )
                 logger.error(f"[LoginFlow] {error_msg}")
 
-                # Специальная обработка для опкода 0xEE (частый признак ошибки дешифрования Init)
+
                 if opcode == 0xEE:
                     logger.error(
                         "[LoginFlow] ERROR: Received opcode 0xEE. This usually indicates a "
@@ -283,7 +283,7 @@ class LoginFlow:
                         "Static Blowfish key might be incorrect for this server."
                     )
 
-                # Специальная обработка для опкода 0x15 (CharSelectedPacket)
+
                 if opcode == 0x15:
                     logger.error(
                         f"[LoginFlow] CRITICAL: Received CharSelectedPacket (0x15) from Login Server! "
@@ -299,9 +299,9 @@ class LoginFlow:
                             "4. Server protocol version mismatch"
                         )
 
-                # Дополнительная диагностика с packet inspector
+
                 if self._packet_inspector:
-                    # Анализируем полученные данные
+
                     raw_packet = opcode.to_bytes(1, 'little') + data
                     analysis = self._packet_inspector.analyze_packet(
                         raw_data=raw_packet,
@@ -316,7 +316,7 @@ class LoginFlow:
 
                 raise LoginError(0xFF, error_msg)
 
-            # Парсим пакет
+
             try:
                 parsed_packet = packet_class(data)
                 logger.debug(f"[LoginFlow] Successfully parsed {packet_class.__name__}")
@@ -325,17 +325,17 @@ class LoginFlow:
                 error_msg = f"Failed to parse {packet_class.__name__}: {parse_error}"
                 logger.error(f"[LoginFlow] {error_msg}")
 
-                # Диагностика ошибки парсинга
+
                 if self._packet_inspector and len(data) > 0:
                     logger.error(f"[LoginFlow] Packet data: {data.hex()}")
 
                 raise LoginError(0xFF, error_msg) from parse_error
 
         except LoginError:
-            # Повторно поднимаем LoginError без изменений
+
             raise
         except Exception as e:
-            # Обрабатываем неожиданные ошибки
+
             error_msg = f"Unexpected error while waiting for {packet_class.__name__}: {e}"
             logger.error(f"[LoginFlow] {error_msg}")
             raise LoginError(0xFF, error_msg) from e

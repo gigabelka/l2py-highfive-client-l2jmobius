@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Packet inspection and debugging utilities for L2py client.
 
 Provides comprehensive packet analysis tools including hex dumps,
@@ -27,7 +27,7 @@ class PacketAnalysis:
 class PacketInspector:
     """Comprehensive packet inspection and debugging utility."""
 
-    # Known packet opcodes for reference
+
     LOGIN_SERVER_OPCODES = {
         0x00: "InitPacket",
         0x01: "LoginFailPacket",
@@ -102,11 +102,11 @@ class PacketInspector:
             packet_type=None
         )
 
-        # Extract opcode from decrypted data if available
+
         if decrypted_data and len(decrypted_data) > 0:
             analysis.opcode = decrypted_data[0]
 
-            # Determine packet type based on source and opcode
+
             if packet_source.lower() == "login":
                 analysis.packet_type = self.LOGIN_SERVER_OPCODES.get(
                     analysis.opcode, f"Unknown Login Packet (0x{analysis.opcode:02X})"
@@ -118,7 +118,7 @@ class PacketInspector:
             else:
                 analysis.packet_type = f"Unknown Packet (0x{analysis.opcode:02X})"
 
-            # Validate against expected opcode
+
             if expected_opcode is not None:
                 if analysis.opcode == expected_opcode:
                     analysis.is_valid = True
@@ -151,7 +151,7 @@ class PacketInspector:
         else:
             log_lines.append("=== Packet Analysis ===")
 
-        # Basic information
+
         log_lines.append(f"Raw packet size: {len(analysis.raw_data)} bytes")
         if analysis.decrypted_data:
             log_lines.append(f"Decrypted size: {len(analysis.decrypted_data)} bytes")
@@ -167,7 +167,7 @@ class PacketInspector:
         if analysis.error_message:
             log_lines.append(f"Error: {analysis.error_message}")
 
-        # Hex dumps
+
         log_lines.append("")
         log_lines.append(self.hex_dump(analysis.raw_data, "Raw Data"))
 
@@ -177,7 +177,7 @@ class PacketInspector:
 
         log_lines.append("=" * 50)
 
-        # Log each line separately to maintain formatting
+
         for line in log_lines:
             logger.debug(line)
 
@@ -190,27 +190,27 @@ class PacketInspector:
         Returns:
             Tuple of (is_valid, error_message).
         """
-        if len(data) < 160:  # InitPacket should be ~160 bytes
+        if len(data) < 160:
             return False, f"InitPacket too short: {len(data)} bytes, expected ~160"
 
         try:
-            # Check if we can parse the expected fields
+
             if data[0] != 0x00:
                 return False, f"Invalid opcode: 0x{data[0]:02X}, expected 0x00"
 
-            # Extract session_id (bytes 1-4)
+
             session_id = int.from_bytes(data[1:5], "little")
 
-            # Extract protocol_version (bytes 5-8)
+
             protocol_version = int.from_bytes(data[5:9], "little")
 
-            # RSA key starts at byte 9 (128 bytes)
+
             rsa_key = data[9:137]
 
-            # Blowfish key at the end (16 bytes)
+
             blowfish_key = data[144:160]
 
-            # Basic validation
+
             if len(rsa_key) != 128:
                 return False, f"Invalid RSA key length: {len(rsa_key)}, expected 128"
 
@@ -239,7 +239,7 @@ class PacketInspector:
         """
         issues = []
 
-        # Check for common problems
+
         if analysis.raw_data and len(analysis.raw_data) < 4:
             issues.append("Packet too short (< 4 bytes)")
 
@@ -247,17 +247,17 @@ class PacketInspector:
             issues.append("Decryption failed - no decrypted data available")
 
         if analysis.opcode is not None:
-            # Check for Game Server packet received when expecting Login Server packet
+
             if analysis.opcode in self.GAME_SERVER_OPCODES and analysis.expected_opcode in self.LOGIN_SERVER_OPCODES:
                 issues.append(f"Received Game Server packet (0x{analysis.opcode:02X}) when expecting Login Server packet")
 
-            # Check for specific problematic packet (0x15 = CharSelectedPacket)
+
             if analysis.opcode == 0x15 and analysis.expected_opcode == 0x00:
                 issues.append("Received CharSelectedPacket (0x15) instead of InitPacket (0x00) - possible connection or decryption issue")
 
-        # Check raw data patterns that might indicate decryption failure
+
         if analysis.raw_data:
-            # If we see repeated patterns, might indicate encryption issues
+
             if len(set(analysis.raw_data)) < 3 and len(analysis.raw_data) > 10:
                 issues.append("Raw data shows minimal entropy - possible encryption/decryption issue")
 
@@ -273,7 +273,7 @@ def create_inspector(enable_logging: bool = True) -> PacketInspector:
     Returns:
         Configured PacketInspector instance.
     """
-    # Configure debug logging if requested
+
     if enable_logging:
         logger.setLevel(logging.DEBUG)
         if not logger.handlers:

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Пакеты протокола Game Server.
 
 Все пакеты для общения с Game Server.
@@ -20,12 +20,12 @@ from l2py.protocol.game.server_packets import (
 )
 
 __all__ = [
-    # Client packets
+
     "ProtocolVersionPacket",
     "AuthLoginPacket",
     "CharacterSelectPacket",
     "EnterWorldPacket",
-    # Server packets
+
     "KeyPacket",
     "CharSelectionInfoPacket",
     "CharSelectedPacket",

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Blowfish Engine из L2JMobius (Java BouncyCastle порт).
 
 Эта реализация точно повторяет BlowfishEngine из L2JMobius,
@@ -10,11 +10,11 @@ from __future__ import annotations
 
 class BlowfishEngine:
     """Blowfish шифрование совместимое с L2JMobius.
-    
+
     Портировано из java/org/l2jmobius/commons/crypt/BlowfishEngine.java
     """
-    
-    # S-box и P-array константы (hex digits of pi)
+
+
     KP = [
         0x243F6A88, 0x85A308D3, 0x13198A2E, 0x03707344,
         0xA4093822, 0x299F31D0, 0x082EFA98, 0xEC4E6C89,
@@ -22,7 +22,7 @@ class BlowfishEngine:
         0xC0AC29B7, 0xC97C50DD, 0x3F84D5B5, 0xB5470917,
         0x9216D5D9, 0x8979FB1B
     ]
-    
+
     KS0 = [
         0xD1310BA6, 0x98DFB5AC, 0x2FFD72DB, 0xD01ADFB7,
         0xB8E1AFED, 0x6A267E96, 0xBA7C9045, 0xF12C7F99,
@@ -89,7 +89,7 @@ class BlowfishEngine:
         0xB6636521, 0xE7B9F9B6, 0xFF34052E, 0xC5855664,
         0x53B02D5D, 0xA99F8FA1, 0x08BA4799, 0x6E85076A
     ]
-    
+
     KS1 = [
         0x4B7A70E9, 0xB5B32944, 0xDB75092E, 0xC4192623,
         0xAD6EA6B0, 0x49A7DF7D, 0x9CEE60B8, 0x8FEDB266,
@@ -156,7 +156,7 @@ class BlowfishEngine:
         0xC5C43465, 0x713E38D8, 0x3D28F89E, 0xF16DFF20,
         0x153E21E7, 0x8FB03D4A, 0xE6E39F2B, 0xDB83ADF7
     ]
-    
+
     KS2 = [
         0xE93D5A68, 0x948140F7, 0xF64C261C, 0x94692934,
         0x411520F7, 0x7602D4F7, 0xBCF46B2E, 0xD4A20068,
@@ -223,7 +223,7 @@ class BlowfishEngine:
         0x6FD5C7E7, 0x56E14EC4, 0x362ABFCE, 0xDDC6C837,
         0xD79A3234, 0x92638212, 0x670EFA8E, 0x406000E0
     ]
-    
+
     KS3 = [
         0x3A39CE37, 0xD3FAF5CF, 0xABC27737, 0x5AC52D1B,
         0x5CB0679E, 0x4FA33742, 0xD3822740, 0x99BC9BBE,
@@ -290,12 +290,12 @@ class BlowfishEngine:
         0x90D4F869, 0xA65CDEA0, 0x3F09252D, 0xC208E69F,
         0xB74E6132, 0xCE77E25B, 0x578FDFE3, 0x3AC372E6
     ]
-    
+
     ROUNDS = 16
-    BLOCK_SIZE = 8  # bytes = 64 bits
+    BLOCK_SIZE = 8
     SBOX_SK = 256
     P_SZ = ROUNDS + 2
-    
+
     def __init__(self) -> None:
         """Инициализация Blowfish engine."""
         self.S0 = [0] * self.SBOX_SK
@@ -304,21 +304,21 @@ class BlowfishEngine:
         self.S3 = [0] * self.SBOX_SK
         self.P = [0] * self.P_SZ
         self._working_key: bytes | None = None
-    
+
     def init(self, key: bytes) -> None:
         """Инициализация с заданным ключом.
-        
+
         Args:
             key: Ключ шифрования.
         """
         self._working_key = key
         self._set_key(key)
-    
+
     def _func(self, x: int) -> int:
         """Функция F для Blowfish."""
         return (((self.S0[(x >> 24) & 0xff] + self.S1[(x >> 16) & 0xff]) 
                 ^ self.S2[(x >> 8) & 0xff]) + self.S3[x & 0xff]) & 0xffffffff
-    
+
     def _process_table(self, xl: int, xr: int, table: list[int]) -> None:
         """Обработка таблицы для инициализации ключа."""
         size = len(table)
@@ -347,17 +347,17 @@ class BlowfishEngine:
             xr = xl
             xl = table[s]
             s += 2
-    
+
     def _set_key(self, key: bytes) -> None:
         """Установка ключа (ключевая schedule)."""
-        # (1) Инициализация S-boxes и P-array фиксированными строками
+
         self.S0[:] = self.KS0[:]
         self.S1[:] = self.KS1[:]
         self.S2[:] = self.KS2[:]
         self.S3[:] = self.KS3[:]
         self.P[:] = self.KP[:]
-        
-        # (2) XOR P[i] с ключом (повторяем ключ по кругу)
+
+
         key_length = len(key)
         key_index = 0
         for i in range(self.P_SZ):
@@ -368,46 +368,46 @@ class BlowfishEngine:
                 if key_index >= key_length:
                     key_index = 0
             self.P[i] ^= data
-        
-        # (3-7) Обработка таблиц
+
+
         self._process_table(0, 0, self.P)
         self._process_table(self.P[self.P_SZ - 2], self.P[self.P_SZ - 1], self.S0)
         self._process_table(self.S0[self.SBOX_SK - 2], self.S0[self.SBOX_SK - 1], self.S1)
         self._process_table(self.S1[self.SBOX_SK - 2], self.S1[self.SBOX_SK - 1], self.S2)
         self._process_table(self.S2[self.SBOX_SK - 2], self.S2[self.SBOX_SK - 1], self.S3)
-    
+
     def _bytes_to_32bits(self, src: bytes, src_index: int) -> int:
         """Преобразование 4 байт в int (little-endian)."""
         return ((src[src_index + 3] & 0xff) << 24) | ((src[src_index + 2] & 0xff) << 16) | \
                ((src[src_index + 1] & 0xff) << 8) | (src[src_index] & 0xff)
-    
+
     def _bits32_to_bytes(self, val: int, dst: bytearray, dst_index: int) -> None:
         """Преобразование int в 4 байта (little-endian)."""
         dst[dst_index] = val & 0xff
         dst[dst_index + 1] = (val >> 8) & 0xff
         dst[dst_index + 2] = (val >> 16) & 0xff
         dst[dst_index + 3] = (val >> 24) & 0xff
-    
+
     def encrypt_block(self, src: bytes, src_index: int = 0, 
                       dst: bytearray | None = None, dst_index: int = 0) -> bytearray:
         """Шифрование одного блока (8 байт).
-        
+
         Args:
             src: Исходные данные.
             src_index: Смещение в исходных данных.
             dst: Буфер для результата (или None для создания нового).
             dst_index: Смещение в буфере результата.
-            
+
         Returns:
             Буфер с зашифрованными данными.
         """
         if dst is None:
             dst = bytearray(8)
             dst_index = 0
-            
+
         xl = self._bytes_to_32bits(src, src_index)
         xr = self._bytes_to_32bits(src, src_index + 4)
-        
+
         xl ^= self.P[0]
         xr ^= self._func(xl) ^ self.P[1]
         xl ^= self._func(xr) ^ self.P[2]
@@ -426,32 +426,32 @@ class BlowfishEngine:
         xr ^= self._func(xl) ^ self.P[15]
         xl ^= self._func(xr) ^ self.P[16]
         xr ^= self.P[17]
-        
+
         self._bits32_to_bytes(xr, dst, dst_index)
         self._bits32_to_bytes(xl, dst, dst_index + 4)
-        
+
         return dst
-    
+
     def decrypt_block(self, src: bytes, src_index: int = 0,
                       dst: bytearray | None = None, dst_index: int = 0) -> bytearray:
         """Дешифрование одного блока (8 байт).
-        
+
         Args:
             src: Зашифрованные данные.
             src_index: Смещение в зашифрованных данных.
             dst: Буфер для результата (или None для создания нового).
             dst_index: Смещение в буфере результата.
-            
+
         Returns:
             Буфер с дешифрованными данными.
         """
         if dst is None:
             dst = bytearray(8)
             dst_index = 0
-            
+
         xl = self._bytes_to_32bits(src, src_index)
         xr = self._bytes_to_32bits(src, src_index + 4)
-        
+
         xl ^= self.P[17]
         xr ^= self._func(xl) ^ self.P[16]
         xl ^= self._func(xr) ^ self.P[15]
@@ -470,41 +470,41 @@ class BlowfishEngine:
         xr ^= self._func(xl) ^ self.P[2]
         xl ^= self._func(xr) ^ self.P[1]
         xr ^= self.P[0]
-        
+
         self._bits32_to_bytes(xr, dst, dst_index)
         self._bits32_to_bytes(xl, dst, dst_index + 4)
-        
+
         return dst
-    
+
     def encrypt(self, data: bytes) -> bytes:
         """Шифрование данных (ECB режим).
-        
+
         Args:
             data: Данные для шифрования (должны быть кратны 8).
-            
+
         Returns:
             Зашифрованные данные.
         """
         if len(data) % 8 != 0:
             raise ValueError("Data length must be multiple of 8")
-            
+
         result = bytearray(len(data))
         for i in range(0, len(data), 8):
             self.encrypt_block(data, i, result, i)
         return bytes(result)
-    
+
     def decrypt(self, data: bytes) -> bytes:
         """Дешифрование данных (ECB режим).
-        
+
         Args:
             data: Данные для дешифрования (должны быть кратны 8).
-            
+
         Returns:
             Дешифрованные данные.
         """
         if len(data) % 8 != 0:
             raise ValueError("Data length must be multiple of 8")
-            
+
         result = bytearray(len(data))
         for i in range(0, len(data), 8):
             self.decrypt_block(data, i, result, i)

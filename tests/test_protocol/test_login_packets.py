@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Тесты для пакетов Login Server."""
 
 import pytest
@@ -26,13 +26,13 @@ class TestServerPackets:
 
     def test_init_packet_parsing(self):
         """Тест парсинга Init пакета."""
-        # Создаём мок-данные для Init пакета
+
         data = (
-            b"\x78\x56\x34\x12"  # session_id = 0x12345678
-            b"\x0B\x01\x00\x00"  # protocol_version = 267
-            + b"\x00" * 128  # rsa_key (128 нулей)
-            + b"\x00" * 16  # GG data
-            + b"key1234567890123"  # blowfish_key (16 байт)
+            b"\x78\x56\x34\x12"
+            b"\x0B\x01\x00\x00"
+            + b"\x00" * 128
+            + b"\x00" * 16
+            + b"key1234567890123"
         )
 
         packet = InitPacket(data)
@@ -44,15 +44,15 @@ class TestServerPackets:
 
     def test_gg_auth_packet_parsing(self):
         """Тест парсинга GGAuth пакета."""
-        data = b"\x01\x00\x00\x00"  # response = 1
+        data = b"\x01\x00\x00\x00"
         packet = GGAuthPacket(data)
         assert packet.response == 1
 
     def test_login_ok_packet_parsing(self):
         """Тест парсинга LoginOk пакета."""
         data = (
-            b"\x12\x34\x56\x78"  # login_ok1 = 0x78563412
-            b"\x87\x65\x43\x21"  # login_ok2 = 0x21436587
+            b"\x12\x34\x56\x78"
+            b"\x87\x65\x43\x21"
         )
         packet = LoginOkPacket(data)
         assert packet.login_ok1 == 0x78563412
@@ -61,8 +61,8 @@ class TestServerPackets:
     def test_play_ok_packet_parsing(self):
         """Тест парсинга PlayOk пакета."""
         data = (
-            b"\xAA\xBB\xCC\xDD"  # play_ok1 = 0xDDCCBBAA
-            b"\x11\x22\x33\x44"  # play_ok2 = 0x44332211
+            b"\xAA\xBB\xCC\xDD"
+            b"\x11\x22\x33\x44"
         )
         packet = PlayOkPacket(data)
         assert packet.play_ok1 == 0xDDCCBBAA
@@ -70,25 +70,25 @@ class TestServerPackets:
 
     def test_login_fail_packet_parsing(self):
         """Тест парсинга LoginFail пакета."""
-        data = b"\x02"  # reason = 2
+        data = b"\x02"
         packet = LoginFailPacket(data)
         assert packet.reason == 2
 
     def test_server_list_packet_parsing(self):
         """Тест парсинга ServerList пакета."""
-        # Создаём мок-данные для ServerList (1 сервер)
+
         data = (
-            b"\x01"  # count = 1
-            b"\x00"  # last_server = 0
-            b"\x01"  # server_id = 1
-            + b"\x7F\x00\x00\x01"  # IP = 192.168.0.33
-            + b"\x30\x75\x00\x00"  # port = 30000
-            b"\x00"  # age_limit = 0
-            b"\x00"  # is_pvp = 0
-            + b"\x64\x00"  # online = 100
-            + b"\x90\x01"  # max_online = 400
-            b"\x01"  # status = 1
-            + b"\x00" * 7  # дополнительные поля
+            b"\x01"
+            b"\x00"
+            b"\x01"
+            + b"\x7F\x00\x00\x01"
+            + b"\x30\x75\x00\x00"
+            b"\x00"
+            b"\x00"
+            + b"\x64\x00"
+            + b"\x90\x01"
+            b"\x01"
+            + b"\x00" * 7
         )
 
         packet = ServerListPacket(data)
@@ -112,14 +112,14 @@ class TestClientPackets:
         packet = AuthGameGuardPacket(session_id=0x12345678)
         data = packet.to_bytes()
 
-        # Опкод + session_id (4) + 16 нулей = 21 байт
-        assert data[0] == 0x07  # opcode
-        assert data[1:5] == b"\x78\x56\x34\x12"  # session_id LE
-        assert data[5:] == b"\x00" * 16  # GG data
+
+        assert data[0] == 0x07
+        assert data[1:5] == b"\x78\x56\x34\x12"
+        assert data[5:] == b"\x00" * 16
 
     def test_request_auth_login_packet(self):
         """Тест RequestAuthLogin пакета."""
-        # Создаём мок RSA
+
         modulus = b"\x00" * 128
         rsa = L2RSA(modulus)
 
@@ -131,8 +131,8 @@ class TestClientPackets:
         )
         data = packet.to_bytes()
 
-        # Опкод + 128 байт RSA + 4 + 4 + 8 = 145 байт
-        assert data[0] == 0x00  # opcode
+
+        assert data[0] == 0x00
         assert len(data) == 1 + 128 + 4 + 4 + 8
 
     def test_request_server_list_packet(self):
@@ -143,11 +143,11 @@ class TestClientPackets:
         )
         data = packet.to_bytes()
 
-        # Опкод + login_ok1 + login_ok2 + 1 байт = 10 байт
-        assert data[0] == 0x05  # opcode
-        assert data[1:5] == b"\x11\x11\x11\x11"  # login_ok1
-        assert data[5:9] == b"\x22\x22\x22\x22"  # login_ok2
-        assert data[9] == 0x05  # unknown byte
+
+        assert data[0] == 0x05
+        assert data[1:5] == b"\x11\x11\x11\x11"
+        assert data[5:9] == b"\x22\x22\x22\x22"
+        assert data[9] == 0x05
 
     def test_request_server_login_packet(self):
         """Тест RequestServerLogin пакета."""
@@ -158,8 +158,8 @@ class TestClientPackets:
         )
         data = packet.to_bytes()
 
-        # Опкод + login_ok1 + login_ok2 + server_id = 10 байт
-        assert data[0] == 0x02  # opcode
-        assert data[1:5] == b"\x11\x11\x11\x11"  # login_ok1
-        assert data[5:9] == b"\x22\x22\x22\x22"  # login_ok2
-        assert data[9] == 0x01  # server_id
+
+        assert data[0] == 0x02
+        assert data[1:5] == b"\x11\x11\x11\x11"
+        assert data[5:9] == b"\x22\x22\x22\x22"
+        assert data[9] == 0x01

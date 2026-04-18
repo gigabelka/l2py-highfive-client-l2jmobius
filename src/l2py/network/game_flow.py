@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Оркестрация входа в игровой мир.
 
 Реализует полный flow от подключения к Game Server
@@ -123,7 +123,7 @@ class GameFlow:
             GameError: Если вход не удался.
             ConnectionError: Если проблемы с соединением.
         """
-        # Создаём криптографию и соединение
+
         crypt = GameCrypt()
         conn = GameConnection(
             self._login_result.server.ip,
@@ -138,26 +138,26 @@ class GameFlow:
                 f"server: {self._login_result.server.ip}:{self._login_result.server.port}"
             )
 
-            # Шаг 1: Отправляем ProtocolVersion (не шифруется)
+
             logger.debug("Sending ProtocolVersion...")
             await conn.send_packet(
                 ProtocolVersionPacket(),
                 raw=True,
             )
 
-            # Шаг 2: Получаем KeyPacket
+
             logger.debug("Waiting for KeyPacket...")
             key_packet = await self._wait_for_packet(conn, KeyPacket)
             logger.debug(f"Received KeyPacket: enabled={key_packet.enabled}")
             if key_packet.enabled:
                 logger.debug(f"KeyPacket xor_key: {key_packet.xor_key.hex()}")
 
-            # Включаем шифрование
+
             if key_packet.enabled:
                 crypt.set_key(key_packet.xor_key)
                 logger.debug(f"Encryption enabled, full key: {crypt._decrypt_key.hex()}")
 
-            # Шаг 3: Отправляем AuthLogin
+
             logger.debug("Sending AuthLogin...")
             auth_packet = AuthLoginPacket(
                 login=self._login_result.username,
@@ -172,7 +172,7 @@ class GameFlow:
             await conn.send_packet(auth_packet)
             logger.debug(f"Key after send: {crypt._encrypt_key.hex() if crypt._encrypt_key else 'not set'}")
 
-            # Шаг 4: Получаем список персонажей
+
             logger.debug("Waiting for CharSelectionInfo...")
             try:
                 char_info = await self._wait_for_packet(conn, CharSelectionInfoPacket)
@@ -183,7 +183,7 @@ class GameFlow:
                     "Check Game <-> Login Server connection configuration."
                 )
 
-            # Выбираем персонажа
+
             if not char_info.characters:
                 raise GameError("No characters on account")
 
@@ -198,14 +198,14 @@ class GameFlow:
                 f"Selected character: {selected_char.name} (level {selected_char.level})"
             )
 
-            # Шаг 5: Отправляем CharacterSelect
+
             logger.debug(f"Sending CharacterSelect (slot {self._char_slot})...")
             await conn.send_packet(CharacterSelectPacket(self._char_slot))
 
-            # Шаг 6: Получаем либо CharSelected (0x0B), либо сразу UserInfo (0x32).
-            # SPECIFICATION §5.3.6 quirk: некоторые сборки пропускают CharSelected.
-            # L2JMobius CT2.6 перед CharSelected шлёт SSQInfo (0x73) и другие
-            # broadcast-пакеты — их нужно проглатывать, иначе закрытие канала → RST.
+
+
+
+
             logger.debug("Waiting for CharSelected or UserInfo...")
             user_info: UserInfoPacket | None = None
             session_id = selected_char.session_id
@@ -228,17 +228,17 @@ class GameFlow:
                     f"while waiting for CharSelected"
                 )
 
-            # Шаг 7: RequestKeyMapping (обязателен по SPECIFICATION §5.3.7)
+
             logger.debug("Sending RequestKeyMapping...")
             await conn.send_packet(RequestKeyMappingPacket())
 
-            # Шаг 8: EnterWorld (104 нулевых байта)
+
             logger.debug("Sending EnterWorld...")
             await conn.send_packet(EnterWorldPacket())
 
-            # Шаг 9: UserInfo, если ещё не получен. Перед ним сервер может
-            # прислать вспомогательные broadcast-пакеты (0xFE extended,
-            # ExStorageMaxCount 0x18 и т.п.) — проглатываем их.
+
+
+
             if user_info is None:
                 logger.debug("Waiting for UserInfo...")
                 while True:

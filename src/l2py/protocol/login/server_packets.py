@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Пакеты от Login Server к клиенту.
 
 Содержит все пакеты, которые клиент получает от Login Server
@@ -43,10 +43,10 @@ class InitPacket(ServerPacket):
         self.session_id = self._reader.read_int32()
         self.protocol_version = self._reader.read_int32()
         self.rsa_key = self._reader.read_bytes(128)
-        # Пропускаем 16 байт GameGuard-данных
+
         self._reader.skip(16)
         self.blowfish_key = self._reader.read_bytes(16)
-        # Остальное пропускаем (может быть доп. GG-данные)
+
 
 
 class GGAuthPacket(ServerPacket):
@@ -125,7 +125,7 @@ class ServerListPacket(ServerPacket):
         for _ in range(count):
             server_id = self._reader.read_byte()
 
-            # IP-адрес (4 байта)
+
             ip_bytes = self._reader.read_bytes(4)
             ip = f"{ip_bytes[0]}.{ip_bytes[1]}.{ip_bytes[2]}.{ip_bytes[3]}"
 
@@ -136,7 +136,7 @@ class ServerListPacket(ServerPacket):
             max_online = self._reader.read_uint16()
             status = self._reader.read_byte() != 0
 
-            # Создаём сервер (пропускаем остальные поля если есть)
+
             server = GameServer(
                 id=server_id,
                 ip=ip,
@@ -149,8 +149,8 @@ class ServerListPacket(ServerPacket):
             )
             self.servers.append(server)
 
-            # Пропускаем оставшиеся поля сервера (brackets и т.д.)
-            # Для High Five это ~7 байт
+
+
             if self._reader.remaining() >= 7:
                 self._reader.skip(7)
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """TCP-соединение с Login Server.
 
 Асинхронное соединение с использованием asyncio.
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 10.0  # seconds
+DEFAULT_TIMEOUT = 10.0
 
 
 class LoginConnection:
@@ -103,7 +103,7 @@ class LoginConnection:
         context = f"{'First packet (Init)' if self._is_first_packet else 'Regular packet'}"
 
         try:
-            # Читаем длину (2 байта, uint16 LE)
+
             length_bytes = await asyncio.wait_for(
                 self._reader.readexactly(2),
                 timeout=DEFAULT_TIMEOUT,
@@ -115,7 +115,7 @@ class LoginConnection:
                 logger.error(f"[Login] {error_msg}")
                 raise ConnectionError(error_msg)
 
-            # Читаем тело пакета
+
             body = await asyncio.wait_for(
                 self._reader.readexactly(length - 2),
                 timeout=DEFAULT_TIMEOUT,
@@ -123,15 +123,15 @@ class LoginConnection:
 
             raw_packet_data = length_bytes + body
 
-            # DEBUG: Базовое логирование сырых данных
+
             logger.debug(f"[Login] Raw packet: length={length}, body={body.hex()}")
 
-            # Дешифруем с обработкой ошибок
+
             try:
                 if self._is_first_packet:
                     decrypted_data = self._crypt.decrypt_init(body)
 
-                    # Авто-детект статического ключа при несоответствии опкода
+
                     if expected_opcode is not None and (not decrypted_data or decrypted_data[0] != expected_opcode):
                         logger.warning(
                             f"[Login] First packet opcode mismatch: expected 0x{expected_opcode:02X}, "
@@ -165,7 +165,7 @@ class LoginConnection:
                 decryption_error = e
                 logger.error(f"[Login] Decryption failed: {e}")
 
-                # Пытаемся проанализировать сырые данные для отладки
+
                 if self._packet_inspector:
                     analysis = self._packet_inspector.analyze_packet(
                         raw_data=raw_packet_data,
@@ -186,11 +186,11 @@ class LoginConnection:
                 logger.error(f"[Login] {error_msg}")
                 raise ConnectionError(error_msg)
 
-            # Первый байт = opcode
+
             opcode = decrypted_data[0]
             data = decrypted_data[1:]
 
-            # Детальная отладка с packet inspector
+
             if self._packet_inspector:
                 analysis = self._packet_inspector.analyze_packet(
                     raw_data=raw_packet_data,
@@ -200,12 +200,12 @@ class LoginConnection:
                 )
                 self._packet_inspector.log_packet_analysis(analysis, context)
 
-                # Проверяем на потенциальные проблемы
+
                 issues = self._packet_inspector.detect_potential_issues(analysis)
                 if issues:
                     logger.warning(f"[Login] Potential issues detected: {'; '.join(issues)}")
 
-                # Специальная проверка для InitPacket
+
                 if self._is_first_packet and opcode == 0x00:
                     is_valid, validation_msg = self._packet_inspector.validate_init_packet_structure(decrypted_data)
                     if not is_valid:
@@ -217,14 +217,14 @@ class LoginConnection:
                 f"[Login] Received packet: opcode=0x{opcode:02X}, length={len(data)}"
             )
 
-            # Логируем несоответствие опкода более подробно
+
             if expected_opcode is not None and opcode != expected_opcode:
                 logger.error(
                     f"[Login] OPCODE MISMATCH: expected 0x{expected_opcode:02X}, "
                     f"got 0x{opcode:02X}. Context: {context}"
                 )
 
-                # Дополнительная диагностика для опкода 0x15
+
                 if opcode == 0x15:
                     logger.error(
                         f"[Login] CRITICAL: Received CharSelectedPacket (0x15) from Login Server! "
@@ -237,7 +237,7 @@ class LoginConnection:
             error_msg = f"Connection closed while reading packet: {e}"
             logger.error(f"[Login] {error_msg}")
 
-            # Логируем частично прочитанные данные для отладки
+
             if raw_packet_data:
                 logger.debug(f"[Login] Partial data received: {raw_packet_data.hex()}")
 
@@ -248,7 +248,7 @@ class LoginConnection:
         except Exception as e:
             logger.error(f"[Login] Unexpected error reading packet: {e}. Context: {context}")
 
-            # Последняя попытка диагностики при неожиданной ошибке
+
             if self._packet_inspector and raw_packet_data:
                 analysis = self._packet_inspector.analyze_packet(
                     raw_data=raw_packet_data,
@@ -272,17 +272,17 @@ class LoginConnection:
         if not self._connected or self._writer is None:
             raise ConnectionError("Not connected")
 
-        # Сериализуем пакет
+
         data = packet.to_bytes()
 
-        # Шифруем
+
         encrypted = self._crypt.encrypt(data)
 
-        # Формируем пакет с длиной
+
         length = len(encrypted) + 2
         packet_bytes = length.to_bytes(2, "little") + encrypted
 
-        # Отправляем
+
         self._writer.write(packet_bytes)
         await self._writer.drain()
 

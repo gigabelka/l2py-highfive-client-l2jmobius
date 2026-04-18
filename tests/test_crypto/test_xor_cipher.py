@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Тесты для XOR-шифрования Game Server."""
 
 import pytest
@@ -52,13 +52,13 @@ class TestGameCrypt:
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
         plaintext = b"Hello World!"
-        # Первый encrypt не шифрует (возвращает как есть)
+
         first = crypt.encrypt(plaintext)
         assert first == plaintext
-        # Второй encrypt шифрует
+
         encrypted = crypt.encrypt(plaintext)
         assert encrypted != plaintext
-        # decrypt всегда расшифровывает
+
         decrypted = crypt.decrypt(encrypted)
         assert decrypted == plaintext
 
@@ -68,10 +68,10 @@ class TestGameCrypt:
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
         plaintext = b"TestData1234"
-        # Первый пакет не шифруется (как в L2JMobius)
+
         first = crypt.encrypt(plaintext)
         assert first == plaintext
-        # Второй пакет шифруется
+
         encrypted = crypt.encrypt(plaintext)
         assert encrypted != plaintext
 
@@ -80,14 +80,14 @@ class TestGameCrypt:
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
-        # Сохраняем состояние ключа
+
         key_before = list(crypt._encrypt_key)
 
-        # Первый пакет не меняет ключ
+
         crypt.encrypt(b"test")
         assert list(crypt._encrypt_key) == key_before
 
-        # Второй пакет меняет ключ
+
         crypt.encrypt(b"test")
         assert list(crypt._encrypt_key) != key_before
 
@@ -96,15 +96,15 @@ class TestGameCrypt:
         crypt = GameCrypt()
         crypt.set_key(b"\x00" * 8)
 
-        # Начальное значение байт 8-11
+
         initial_counter = int.from_bytes(crypt._encrypt_key[8:12], "little")
 
-        # Первый пакет не меняет ключ
-        crypt.encrypt(b"abcd")  # 4 байта
+
+        crypt.encrypt(b"abcd")
         assert int.from_bytes(crypt._encrypt_key[8:12], "little") == initial_counter
 
-        # Счётчик должен увеличиться на 4 со второго пакета
-        crypt.encrypt(b"abcd")  # 4 байта
+
+        crypt.encrypt(b"abcd")
         new_counter = int.from_bytes(crypt._encrypt_key[8:12], "little")
         assert new_counter == initial_counter + 4
 
@@ -113,19 +113,19 @@ class TestGameCrypt:
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
-        # Сохраняем начальные состояния
+
         encrypt_key_before = list(crypt._encrypt_key)
         decrypt_key_before = list(crypt._decrypt_key)
 
-        # Первый encrypt не меняет ключ (как в L2JMobius)
+
         crypt.encrypt(b"test")
         assert list(crypt._encrypt_key) == encrypt_key_before
 
-        # Второй encrypt меняет ключ
+
         crypt.encrypt(b"test")
         assert list(crypt._encrypt_key) != encrypt_key_before
 
-        # Decrypt ключ не изменился
+
         assert list(crypt._decrypt_key) == decrypt_key_before
 
     def test_multiple_encrypt_calls(self):
@@ -133,7 +133,7 @@ class TestGameCrypt:
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
-        # Несколько пакетов
+
         plaintext1 = b"Packet1"
         plaintext2 = b"Packet2Data"
         plaintext3 = b"P3"
@@ -142,13 +142,13 @@ class TestGameCrypt:
         encrypted2 = crypt.encrypt(plaintext2)
         encrypted3 = crypt.encrypt(plaintext3)
 
-        # Первый пакет не шифруется (как в L2JMobius)
+
         assert encrypted1 == plaintext1
-        # Остальные шифруются
+
         assert encrypted2 != plaintext2
         assert encrypted3 != plaintext3
 
-        # Зашифрованные данные должны отличаться друг от друга
+
         assert encrypted2 != encrypted3
 
     def test_long_data(self):
@@ -156,16 +156,16 @@ class TestGameCrypt:
         crypt = GameCrypt()
         crypt.set_key(b"\x01\x02\x03\x04\x05\x06\x07\x08")
 
-        # Данные длиннее 16 байт (длина ключа)
+
         plaintext = b"A" * 100
-        # Первый encrypt не шифрует
+
         first = crypt.encrypt(plaintext)
         assert first == plaintext
-        # Второй encrypt шифрует
+
         encrypted = crypt.encrypt(plaintext)
         assert len(encrypted) == 100
         assert encrypted != plaintext
-        # decrypt всегда расшифровывает
+
         decrypted = crypt.decrypt(encrypted)
         assert decrypted == plaintext
 

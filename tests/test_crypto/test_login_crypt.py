@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Тесты для LoginCrypt."""
 
 import pytest
@@ -35,11 +35,11 @@ class TestLoginCrypt:
         crypt = LoginCrypt()
         crypt.set_key(b"session_key_16by")
 
-        # Данные: 8 байт данных + 8 байт для checksum
+
         data = b"\x01\x02\x03\x04" + b"\x00" * 12
         checksum = crypt._checksum(data)
 
-        # Checksum должна быть 32-битным числом
+
         assert isinstance(checksum, int)
         assert 0 <= checksum <= 0xFFFFFFFF
 
@@ -48,7 +48,7 @@ class TestLoginCrypt:
         crypt = LoginCrypt()
         crypt.set_key(b"session_key_16by")
 
-        # Данные с правильной checksum
+
         data = b"\x01\x02\x03\x04\x05\x06\x07\x08"
         checksum = crypt._checksum(data + b"\x00" * 8)
         checksum_bytes = checksum.to_bytes(4, "little")
@@ -61,7 +61,7 @@ class TestLoginCrypt:
         crypt = LoginCrypt()
         crypt.set_key(b"session_key_16by")
 
-        # Данные с неправильной checksum
+
         data = b"\x01\x02\x03\x04\xFF\xFF\xFF\xFF\x00\x00\x00\x00"
 
         assert crypt._verify_checksum(data) is False
@@ -88,7 +88,7 @@ class TestLoginCrypt:
         """Тест что decrypt без ключа вызывает ошибку."""
         crypt = LoginCrypt()
 
-        # Создаём фейковые зашифрованные данные
+
         fake_data = b"\x00" * 16
 
         with pytest.raises(ValueError, match="Session key not set"):
@@ -103,21 +103,21 @@ class TestLoginCrypt:
         encrypted = crypt.encrypt(plaintext)
 
         assert encrypted != plaintext
-        assert len(encrypted) % 8 == 0  # Кратно 8
+        assert len(encrypted) % 8 == 0
 
     def test_decrypt_init(self):
         """Тест дешифрования Init пакета."""
         crypt = LoginCrypt()
 
-        # Создаём тестовые данные
-        # Сначала зашифруем что-то статическим ключом
+
+
         plaintext = b"\x00" * 32
         encrypted = crypt._static_cipher.encrypt(plaintext)
 
-        # Дешифруем через decrypt_init
+
         decrypted = crypt.decrypt_init(encrypted)
 
-        # Должно вернуться что-то (XOR может изменить данные)
-        # decrypt_init отрезает 8 байт XOR tail, так что длина = 32 - 8 = 24
+
+
         assert isinstance(decrypted, bytes)
-        assert len(decrypted) == 24  # 32 - 8 (XOR tail)
+        assert len(decrypted) == 24

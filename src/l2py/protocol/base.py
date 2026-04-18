@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Базовые классы для работы с бинарными пакетами L2.
 
 Содержит PacketReader и PacketWriter для сериализации/десериализации
@@ -133,17 +133,17 @@ class PacketReader:
         Returns:
             Декодированная строка.
         """
-        # Ищем завершающий \x00\x00
+
         end = self._offset
         while end + 1 < len(self._data):
             if self._data[end] == 0 and self._data[end + 1] == 0:
                 break
             end += 2
 
-        # Читаем строку без завершающих нулей
+
         string_bytes = self._data[self._offset : end]
         result = string_bytes.decode("utf-16le", errors="ignore")
-        self._offset = end + 2  # Пропускаем \x00\x00
+        self._offset = end + 2
         return result
 
     def remaining(self) -> int:
@@ -206,7 +206,7 @@ class PacketWriter:
         Args:
             value: Значение для записи.
         """
-        # Преобразуем signed int32 в unsigned bytes
+
         self._buffer.extend(struct.pack("<i", value))
 
     def write_int32(self, value: int) -> None:
@@ -219,9 +219,9 @@ class PacketWriter:
 
     def write_uint32(self, value: int) -> None:
         """Записывает 4 байта как signed int32 (little-endian).
-        
+
         L2 протокол использует signed int32 для session keys.
-        
+
         Args:
             value: Значение для записи.
         """
@@ -267,7 +267,7 @@ class PacketWriter:
         """
         encoded = value.encode("utf-16le")
         self._buffer.extend(encoded)
-        self._buffer.extend(b"\x00\x00")  # Завершающий нуль
+        self._buffer.extend(b"\x00\x00")
 
     def to_bytes(self) -> bytes:
         """Возвращает финальный байтовый массив.

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Тесты для PacketReader и PacketWriter."""
 
 import struct

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Типизированная система событий.
 
 Позволяет подписываться на события с type-safe callbacks.
@@ -33,7 +33,7 @@ class PacketReceivedEvent:
 
     opcode: int
     data: bytes
-    source: str  # "login" или "game"
+    source: str
 
 
 @dataclass(frozen=True)
@@ -100,8 +100,8 @@ class EventEmitter:
             self.off(event_type, wrapper)
             await self._invoke_callback(callback, event)
 
-        # Сохраняем ссылку на оригинальный callback для off()
-        wrapper._original = callback  # type: ignore
+
+        wrapper._original = callback
         return self.on(event_type, wrapper)
 
     def off(self, event_type: type[T], callback: EventCallback[T]) -> EventEmitter:
@@ -118,13 +118,13 @@ class EventEmitter:
             return self
 
         listeners = self._listeners[event_type]
-        # Ищем callback или его wrapper
+
         to_remove = callback
         for listener in listeners:
             if listener is callback:
                 to_remove = callback
                 break
-            # Проверяем wrapper от once
+
             if hasattr(listener, "_original") and listener._original is callback:
                 to_remove = listener
                 break
@@ -213,12 +213,12 @@ class EventMixin:
 
 
 __all__ = [
-    # Event types
+
     "LoggedInEvent",
     "PacketReceivedEvent",
     "LoginFailedEvent",
     "ServerListEvent",
-    # Classes
+
     "EventEmitter",
     "EventMixin",
 ]

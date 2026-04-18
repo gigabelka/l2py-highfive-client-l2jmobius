@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Пакеты от Game Server к клиенту.
 
 Содержит пакеты, которые клиент получает от Game Server
@@ -22,7 +22,7 @@ class KeyPacket(ServerPacket):
     TODO: Уточнить опкод для High Five.
     """
 
-    opcode: ClassVar[int] = 0x2E  # TODO: Verify for High Five
+    opcode: ClassVar[int] = 0x2E
     __slots__ = ("enabled", "xor_key", "server_id", "obfuscation_key", "result")
 
     def __init__(self, data: bytes) -> None:
@@ -42,16 +42,16 @@ class KeyPacket(ServerPacket):
         """Парсит поля пакета."""
         self.result = self._reader.read_byte()
         self.xor_key = self._reader.read_bytes(8)
-        
+
         if self._reader.remaining() >= 4:
             self.enabled = self._reader.read_int32() != 0
-            
+
         if self._reader.remaining() >= 4:
             self.server_id = self._reader.read_int32()
-            
+
         if self._reader.remaining() >= 1:
-            self._reader.skip(1)  # obfuscation flag
-            
+            self._reader.skip(1)
+
         if self._reader.remaining() >= 4:
             self.obfuscation_key = self._reader.read_int32()
 
@@ -65,7 +65,7 @@ class CharSelectionInfoPacket(ServerPacket):
     TODO: Уточнить опкод для High Five (0x09 или 0x13).
     """
 
-    opcode: ClassVar[int] = 0x09  # High Five
+    opcode: ClassVar[int] = 0x09
     __slots__ = ("characters",)
 
     def __init__(self, data: bytes) -> None:
@@ -79,13 +79,13 @@ class CharSelectionInfoPacket(ServerPacket):
 
     def _read(self) -> None:
         """Парсит поля пакета (L2JMobius High Five формат)."""
-        # Количество персонажей (Int, не Byte!)
+
         char_count = self._reader.read_int32()
-        
-        # Максимальное количество персонажей
+
+
         max_chars = self._reader.read_int32()
-        
-        # Unknown byte
+
+
         self._reader.read_byte()
 
         for i in range(char_count):
@@ -94,80 +94,80 @@ class CharSelectionInfoPacket(ServerPacket):
             login_name = self._reader.read_string()
             session_id = self._reader.read_int32()
             clan_id = self._reader.read_int32()
-            
-            # Builder level
+
+
             self._reader.read_int32()
-            
+
             sex = self._reader.read_int32()
             race = self._reader.read_int32()
             base_class_id = self._reader.read_int32()
-            
-            # GameServerName
+
+
             self._reader.read_int32()
-            
+
             x = self._reader.read_int32()
             y = self._reader.read_int32()
             z = self._reader.read_int32()
-            
-            # HP/MP как double
+
+
             hp = self._reader.read_double()
             mp = self._reader.read_double()
-            
+
             sp = self._reader.read_int32()
             exp = self._reader.read_int64()
-            
-            # High Five exp percentage
+
+
             self._reader.read_double()
-            
+
             level = self._reader.read_int32()
-            
-            # Karma, PK, PVP kills
+
+
             karma = self._reader.read_int32()
             pk_kills = self._reader.read_int32()
             pvp_kills = self._reader.read_int32()
-            
-            # 7x int zeros
+
+
             for _ in range(7):
                 self._reader.read_int32()
-            
-            # Paperdoll items (17 slots)
+
+
             for _ in range(17):
                 self._reader.read_int32()
-            
-            # Hair style, color, face
+
+
             hair_style = self._reader.read_int32()
             hair_color = self._reader.read_int32()
             face = self._reader.read_int32()
-            
-            # Max HP/MP
+
+
             max_hp = self._reader.read_double()
             max_mp = self._reader.read_double()
-            
-            # Delete timer / ban status
+
+
             self._reader.read_int32()
-            
-            # Class ID
+
+
             class_id = self._reader.read_int32()
-            
-            # Active
+
+
             active = self._reader.read_int32() != 0
-            
-            # Enchant effect
+
+
             self._reader.read_byte()
-            
-            # Augmentation
+
+
             self._reader.read_int32()
-            
-            # Transform (0)
+
+
             self._reader.read_int32()
-            
-            # Pet info (5x int + 2x double)
+
+
             for _ in range(5):
                 self._reader.read_int32()
             self._reader.read_double()
             self._reader.read_double()
-            
-            # Vitality
+
+
             vitality = self._reader.read_int32()
 
             char = CharacterInfo(
@@ -209,7 +209,7 @@ class CharSelectedPacket(ServerPacket):
     TODO: Уточнить опкод для High Five (обычно 0x15).
     """
 
-    opcode: ClassVar[int] = 0x0B  # High Five
+    opcode: ClassVar[int] = 0x0B
     __slots__ = (
         "name",
         "session_id",
@@ -244,15 +244,15 @@ class CharSelectedPacket(ServerPacket):
         self.name = self._reader.read_string()
         self.session_id = self._reader.read_int32()
         self.clan_id = self._reader.read_int32()
-        self._reader.skip(4)  # Unknown
+        self._reader.skip(4)
         self.sex = self._reader.read_int32()
         self.race = self._reader.read_int32()
         self.class_id = self._reader.read_int32()
-        self._reader.skip(4)  # Unknown (active?)
+        self._reader.skip(4)
         self.x = self._reader.read_int32()
         self.y = self._reader.read_int32()
         self.z = self._reader.read_int32()
-        # Остальные поля пропускаем (HP, MP и т.д.)
+
 
 
 class UserInfoPacket(ServerPacket):
@@ -265,7 +265,7 @@ class UserInfoPacket(ServerPacket):
     High Five использует inner opcode (обычно 0x04 внутри 0x32).
     """
 
-    opcode: ClassVar[int] = 0x32  # TODO: Verify for High Five
+    opcode: ClassVar[int] = 0x32
     __slots__ = ("character",)
 
     def __init__(self, data: bytes) -> None:
@@ -287,7 +287,7 @@ class UserInfoPacket(ServerPacket):
             x = self._reader.read_int32()
             y = self._reader.read_int32()
             z = self._reader.read_int32()
-            self._reader.read_int32()  # vehicleId
+            self._reader.read_int32()
             object_id = self._reader.read_int32()
             name = self._reader.read_string()
             race = self._reader.read_int32()

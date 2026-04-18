@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Модели для игровых серверов."""
 
 from dataclasses import dataclass

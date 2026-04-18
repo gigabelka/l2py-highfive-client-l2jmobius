@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Главный фасад для подключения к L2 серверу.
 
 Предоставляет простой API для входа в игру.
@@ -66,17 +66,17 @@ class L2Client:
             f"server_id={server_id}, char_slot={char_slot}, debug={debug}"
         )
 
-        # Создаём конфигурации
+
         login_config = LoginConfig(host=host, port=port)
         credentials = Credentials(username=username, password=password)
 
-        # Фаза 1: Авторизация на Login Server
+
         logger.debug("Phase 1: Login Server authentication")
         login_result = await LoginFlow(
             login_config, credentials, server_id, debug_packets=debug
         ).execute()
 
-        # Фаза 2: Вход в игровой мир
+
         logger.debug("Phase 2: Game Server connection")
         session = await GameFlow(login_result, char_slot, debug_packets=debug).execute()
 

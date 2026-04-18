@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Пакеты от клиента к Game Server.
 
 Содержит пакеты, которые клиент отправляет на Game Server
@@ -21,11 +21,11 @@ class ProtocolVersionPacket(ClientPacket):
     TODO: Уточнить опкод (обычно 0x0E или без опкода).
     """
 
-    opcode: ClassVar[int] = 0x0E  # TODO: Verify for High Five
+    opcode: ClassVar[int] = 0x0E
     __slots__ = ("protocol_version",)
 
-    # Версия протокола для High Five
-    HIGH_FIVE_PROTOCOL = 273  # 0x111 (L2JMobius CT 2.6)
+
+    HIGH_FIVE_PROTOCOL = 273
 
     def __init__(self, protocol_version: int = HIGH_FIVE_PROTOCOL) -> None:
         """Инициализация пакета.
@@ -39,7 +39,7 @@ class ProtocolVersionPacket(ClientPacket):
     def _write(self) -> None:
         """Записывает поля пакета."""
         self._writer.write_int32(self.protocol_version)
-        # TODO: Для L2JMobius могут быть дополнительные байты
+
 
 
 class AuthLoginPacket(ClientPacket):
@@ -50,7 +50,7 @@ class AuthLoginPacket(ClientPacket):
     TODO: Уточнить опкод для High Five (обычно 0x2B).
     """
 
-    opcode: ClassVar[int] = 0x2B  # TODO: Verify for High Five
+    opcode: ClassVar[int] = 0x2B
     __slots__ = ("login", "play_ok1", "play_ok2", "login_ok1", "login_ok2")
 
     def __init__(
@@ -79,11 +79,11 @@ class AuthLoginPacket(ClientPacket):
 
     def _write(self) -> None:
         """Записывает поля пакета.
-        
+
         Логин кодируется как UTF-16LE с двойным null-terminator (как стандартная строка L2).
         Сервер использует readString() который читает UTF-16LE до \x00\x00.
         """
-        # UTF-16LE encoding с завершающим \x00\x00 (только стандартный null-terminator)
+
         self._writer.write_string(self.login)
         self._writer.write_uint32(self.play_ok2)
         self._writer.write_uint32(self.play_ok1)
@@ -97,7 +97,7 @@ class CharacterSelectPacket(ClientPacket):
     Отправляется после получения списка персонажей.
     """
 
-    opcode: ClassVar[int] = 0x12  # High Five
+    opcode: ClassVar[int] = 0x12
     __slots__ = ("slot_index",)
 
     def __init__(self, slot_index: int) -> None:
@@ -111,14 +111,14 @@ class CharacterSelectPacket(ClientPacket):
 
     def _write(self) -> None:
         """Записывает поля пакета.
-        
+
         Формат: cd (int slot, short unk1, int unk2, int unk3, int unk4)
         """
         self._writer.write_int32(self.slot_index)
-        self._writer.write_int16(0)  # unk1
-        self._writer.write_int32(0)  # unk2
-        self._writer.write_int32(0)  # unk3
-        self._writer.write_int32(0)  # unk4
+        self._writer.write_int16(0)
+        self._writer.write_int32(0)
+        self._writer.write_int32(0)
+        self._writer.write_int32(0)
 
 
 class EnterWorldPacket(ClientPacket):
@@ -129,7 +129,7 @@ class EnterWorldPacket(ClientPacket):
     TODO: Уточнить опкод для High Five (обычно 0x11).
     """
 
-    opcode: ClassVar[int] = 0x11  # TODO: Verify for High Five
+    opcode: ClassVar[int] = 0x11
     __slots__ = ()
 
     def _write(self) -> None:

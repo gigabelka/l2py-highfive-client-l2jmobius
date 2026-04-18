@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """Тесты для Blowfish шифрования."""
 
 import pytest
@@ -14,7 +14,7 @@ class TestL2Blowfish:
         key = b"test_key_12345"
         cipher = L2Blowfish(key)
 
-        # Данные кратные 8 байтам
+
         plaintext = b"abcdefgh"
         encrypted = cipher.encrypt(plaintext)
         decrypted = cipher.decrypt(encrypted)
@@ -27,14 +27,14 @@ class TestL2Blowfish:
         key = b"test_key_12345"
         cipher = L2Blowfish(key)
 
-        # Данные некратные 8 байтам (должны быть дополнены)
-        plaintext = b"hello"  # 5 байт
+
+        plaintext = b"hello"
         encrypted = cipher.encrypt(plaintext)
         decrypted = cipher.decrypt(encrypted)
 
-        assert len(encrypted) == 8  # Дополнено до 8
+        assert len(encrypted) == 8
         assert decrypted[:5] == plaintext
-        assert decrypted[5:] == b"\x00" * 3  # Padding
+        assert decrypted[5:] == b"\x00" * 3
 
     def test_different_keys_produce_different_ciphertexts(self):
         """Тест что разные ключи дают разный результат."""
@@ -66,7 +66,7 @@ class TestL2Blowfish:
         key = b"test_key_12345"
         cipher = L2Blowfish(key)
 
-        # 24 байта = 3 блока
+
         plaintext = b"0123456789ABCDEFGHIJKLMN"
         encrypted = cipher.encrypt(plaintext)
         decrypted = cipher.decrypt(encrypted)
