@@ -80,6 +80,8 @@ When touching packet encoding, crypto, or adding new opcodes, the authoritative 
 - [docs/CONSTANTS.md](docs/CONSTANTS.md) — LoginFail/PlayFail reason codes, social-action ids, duplicate opcodes across packet directions.
 - [docs/CHECKLIST.md](docs/CHECKLIST.md) — porting checklist, also useful as a correctness smoke-test list.
 - [docs/SKILLS.md](docs/SKILLS.md) — class skill trees (1st/2nd/3rd) for every playable class: skill id, name, max level, learn-level, SP total. Generated from the L2JMobius server XML by [scripts/gen_skills_doc.py](scripts/gen_skills_doc.py); rerun that script to refresh.
+- [docs/INVENTORY.md](docs/INVENTORY.md) — character inventory spec (personal items only — weapons, armor, accessories, adena): 25 paperdoll slots, body-part bitmasks, WeaponType/ArmorType/CrystalType taxonomies, per-class equip rules, on-wire item record, and the narrow packet set (`ItemList 0x11`, `InventoryUpdate 0x21`, `ExStorageMaxCount 0xFE 0x2F`, `UseItem 0x19`, `RequestUnEquipItem 0x16`, `RequestDropItem 0x17`, `RequestDestroyItem 0x60`). Warehouse / pet / trade / quest items are out of scope.
+- [docs/ITEMS.md](docs/ITEMS.md) — catalogue of every item a character can put into their inventory (weapons, armor, off-hand shields/sigils, jewelry, belt, hair, adena). Grouped by weapon type / body slot / armor type / crystal grade; includes id, name, weight, and core stats. Generated from the L2JMobius server XML by [scripts/gen_items_doc.py](scripts/gen_items_doc.py); rerun to refresh.
 
 ## Gotchas
 
