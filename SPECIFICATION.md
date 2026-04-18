@@ -401,13 +401,14 @@ that hold the rolling-XOR seed and 4 unused bytes — see §3.3):
 | 9      | `scrambledRsaKey`  | `bytes[128]` | 128  | must be unscrambled (§3.4)                                                 |
 | 137    | reserved           | `bytes[16]`  | 16   | four random `i32` (GG seed material), ignored by the client                |
 | 153    | `blowfishKey`      | `bytes[16]`  | 16   | session key for every subsequent login packet, both directions             |
-| 169    | trailing block     | `bytes[15]`  | 15   | starts with a `u8 0x00` terminator, then two `i32` + `u16` of GG/extra data |
+| 169    | null terminator    | `u8`         | 1    | `0x00` written by the server                                               |
 
-Total payload: **184 bytes**. The trailing 15 bytes after `blowfishKey` are
-present on every L2J Mobius CT 2.6 Init and typically look like
-`00 00 00 00 00 5b a8 44 f7 00 00 00 00 00 00`.
-A reimplementer can leave them as opaque — only the first 169 bytes are
-required for the auto-login flow.
+Total server-written payload: **170 bytes** (`Init.java:62-77`). On the wire
+the packet is longer because the login crypto pipeline appends a rolling-XOR
+seed (4 bytes), 4 unused bytes, and zero-pads to a Blowfish 8-byte block —
+bringing the post-decrypt buffer to **184 bytes**. After `decXORPass` and
+dropping the last 8 bytes (§3.3) the client sees **176 bytes**, of which only
+the first 170 are meaningful. Bytes 170..175 are zero pad and may be ignored.
 
 ### 4.4 LoginFail (S→C, opcode `0x01`)
 
@@ -442,14 +443,16 @@ Codes outside this set are logged as `Unknown reason (0x…)` and treated as fat
 | 0      | opcode         | `u8` = `0x03` |                                                    |
 | 1      | `loginOkId1`   | `i32`       | session token #1                                     |
 | 5      | `loginOkId2`   | `i32`       | session token #2                                     |
-| 9      | reserved       | `bytes[8]`  | observed all-zero                                    |
-| 17     | `accessLevel`  | `i32`       | observed `0x000003EA` for a normal account           |
-| 21     | trailing block | `bytes[35]` | mostly zeros plus a 7-byte tail used by L2J Mobius   |
+| 9      | reserved       | `bytes[8]`  | two `writeInt(0)` calls                              |
+| 17     | `accessLevel`  | `i32`       | `0x000003EA` for a normal account                    |
+| 21     | reserved       | `i32`       | `writeInt(0)`                                        |
+| 25     | reserved       | `bytes[16]` | `writeBytes(new byte[16])`                           |
 
-Total payload: **56 bytes**.
-
-A reimplementer only needs to keep `loginOkId1` and `loginOkId2`; everything
-from offset 9 onward is opaque and may be skipped.
+Total server-written payload: **41 bytes** (`LoginOk.java:54-64`). The wire
+body is longer because of login-packet padding (§3.6) — expect ~56 bytes on
+the wire after Blowfish padding, NewCrypt checksum etc. A reimplementer
+only needs to keep `loginOkId1` and `loginOkId2`; everything from offset 9
+onward is opaque and may be skipped.
 
 ### 4.6 ServerList (S→C, opcode `0x04`)
 
@@ -490,7 +493,7 @@ connection.
 | Offset | Field    | Type          |
 | ------ | -------- | ------------- |
 | 0      | opcode   | `u8` = `0x06` |
-| 1      | `reason` | `i32`         |
+| 1      | `reason` | `u8`          |
 
 Reason codes recognised by the reference client:
 
@@ -509,12 +512,11 @@ Codes outside this set are logged as `Unknown reason (0x…)`. The legacy Interl
 | 0      | opcode         | `u8` = `0x07` |                                                  |
 | 1      | `playOkId1`    | `i32`       | session token #3                                   |
 | 5      | `playOkId2`    | `i32`       | session token #4                                   |
-| 9      | trailing block | `bytes[7]`  | observed `i32 + i16 + u8` of opaque GG/queue data |
 
-Total payload: **16 bytes**.
-
-Both tokens must be remembered — they are sent later in the game AuthRequest.
-The trailing 7 bytes are not consumed by the auto-login flow.
+Total server-written payload: **9 bytes** (`PlayOk.java:41-44`). The wire
+body is longer because of login-packet padding (§3.6); the extra bytes are
+crypto padding, not packet fields. Both tokens must be remembered — they
+are sent later in the game AuthRequest.
 
 ### 4.9 GGAuth (S→C, opcode `0x0B`)
 
@@ -522,16 +524,15 @@ The trailing 7 bytes are not consumed by the auto-login flow.
 | ------ | ---------------- | ----------- | ---------------------------------------------------- |
 | 0      | opcode           | `u8` = `0x0B` |                                                    |
 | 1      | `ggAuthResponse` | `i32`       | echoes the `sessionId` from Init                     |
-| 5      | reserved         | `bytes[16]` | observed all-zero                                    |
-| 21     | GG nonce         | `bytes[11]` | per-session GameGuard payload, opaque to the client |
+| 5      | reserved         | `bytes[16]` | four `writeInt(0)` calls                             |
 
-Total payload: **32 bytes**.
-
-In practice `ggAuthResponse == sessionId` on every L2J Mobius CT 2.6 capture
-— the reference Java server simply rewrites the first i32 of GGAuth to the
+Total server-written payload: **21 bytes** (`GGAuth.java:41-47`). The wire
+body is longer because of login-packet padding (§3.6); there is **no**
+GameGuard nonce — the extra bytes on the wire are crypto padding.
+`ggAuthResponse == sessionId` on every L2J Mobius CT 2.6 capture — the
+reference Java server simply rewrites the first i32 of GGAuth to the
 sessionId. A reimplementer can therefore treat `ggAuthResponse` as a
-"keep-alive ack" and only needs the i32 itself; the trailing bytes are not
-required for the auto-login flow.
+"keep-alive ack" and only needs the i32 itself.
 
 ### 4.10 RequestAuthLogin (C→S, opcode `0x00`)
 
@@ -558,6 +559,24 @@ ciphertext are GameGuard-related — L2J Mobius CT 2.6 does not validate
 them and accepts an all-zero blob, so a reimplementer that does not need
 to defeat real GameGuard may transmit zeros for everything from offset 129
 onward (the `l2py` reference client takes this shortcut).
+
+**Alternative "new auth" mode (optional on the server).**
+`RequestAuthLogin.java` supports a `newAuthMethod` branch that expects
+**two** 128-byte RSA ciphertexts concatenated (256 bytes total) with this
+plaintext layout across the decrypted 256-byte buffer:
+
+| Offset    | Size | Content                         |
+| --------- | ---- | ------------------------------- |
+| `0x4E`    | 50   | login part 1, ASCII null-padded |
+| `0xCE`    | 14   | login part 2, ASCII null-padded |
+| `0xDC`    | 16   | password, ASCII null-padded     |
+
+The effective login is `trim(part1) + trim(part2)`. This mode is enabled
+via server configuration (L2J Mobius admin flag); the official CT 2.6
+HighFive distribution leaves it **disabled**, so the single-block form
+described above is what real servers accept. A reimplementer only needs
+the dual-block form if they integrate with a server that explicitly opts
+into new-auth.
 
 Trailing 55 bytes (offsets 129..183), captured from a real official client:
 
@@ -595,16 +614,14 @@ Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 | 0      | opcode         | `u8` = `0x05` |                                                  |
 | 1      | `loginOkId1`   | `i32`        | from LoginOk                                       |
 | 5      | `loginOkId2`   | `i32`        | from LoginOk                                       |
-| 9      | constant `0x05`| `u8`         | observed `0x05` on every capture                   |
-| 10     | reserved       | `bytes[6]`   | observed all-zero                                  |
-| 16     | GG checksum    | `i32`        | per-session GameGuard tag (observed `0x5E400C08`) |
-| 20     | reserved       | `bytes[4]`   | observed all-zero                                  |
+| 9      | trailing block | `bytes[15]`  | observed `0x05`, 6 zeros, GG tag i32, 4 zeros     |
 
-The single byte at offset 9 is a flags/version marker — not the i32
-`0x04000000` that earlier specs of the Interlude protocol describe. The
-trailing 14 bytes (offsets 10..23) are GameGuard padding. L2J Mobius
-accepts a 10-byte body (just opcode+ids+`0x05`) as well — this is what
-the `l2py` reference client transmits.
+L2J Mobius only reads the two i32 session tokens (`RequestServerList.java`
+calls `remaining() >= 8` and reads two ints), so everything from offset 9
+onward is ignored by the server. The server accepts a **9-byte body**
+(`opcode + loginOkId1 + loginOkId2`) — this is what the `l2py` reference
+client transmits. The `0x05` byte at offset 9 observed on wire from the
+official client is not a required flag/version marker.
 
 ### 4.13 RequestGGAuth (C→S, opcode `0x07`)
 
@@ -705,11 +722,11 @@ F0 DE BC 9A                                      ; playOkId2 = 0x9ABCDEF0
 <7 trailing bytes — opaque GG/queue data>        ; offsets 0x09..0x0F
 ```
 
-**4.14.7 PlayFail (S→C, `0x06`) — 5 bytes** (§4.7). Note the `i32` reason, not `u8`.
+**4.14.7 PlayFail (S→C, `0x06`) — 2 bytes** (§4.7). L2J Mobius writes the reason as a single byte via `writeByte(reason.getCode())`.
 
 ```
 06                                               ; opcode = 0x06
-0F 00 00 00                                      ; reason = 0x0F "Too many players"
+0F                                               ; reason = 0x0F "Too many players"
 ```
 
 **4.14.8 RequestAuthLogin (C→S, `0x00`) — 184 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the trailing 55 bytes shown below are reproduced verbatim from an observed capture.
@@ -801,7 +818,7 @@ WAIT_USER_INFO
   v
 IN_GAME
   | handle world packets, send gameplay packets,
-  | answer NetPingRequest (0xD3) with NetPing (0xA8)
+  | answer NetPingRequest (0xD9) with NetPing (0xB1)
   v
 (disconnect) -> ERROR / DISCONNECTED
 ```
@@ -883,9 +900,16 @@ Total body size: **19 bytes** (1 opcode + 4 `slotIndex` + 14 zero pad).
 | ------ | ----------- | ----------- | --------- |
 | 0      | opcode      | `u8`        | `0x12`    |
 | 1      | `slotIndex` | `i32`       | 0-based   |
-| 5      | padding     | `bytes[14]` | all zeros |
+| 5      | `_unk1`     | `i16`       | zero      |
+| 7      | `_unk2`     | `i32`       | zero      |
+| 11     | `_unk3`     | `i32`       | zero      |
+| 15     | `_unk4`     | `i32`       | zero      |
 
-**The 14 zero bytes are mandatory on L2J Mobius** — the server reads them and will disconnect otherwise.
+The trailing 14 bytes are read by the server as four typed fields
+(`readShort + 3×readInt`, see `CharacterSelect.java:77-81`) and will cause a
+`BufferUnderflowException` if absent. Total body size is **19 bytes**. All
+four fields are carried over from the C4 client and are simply discarded by
+L2J Mobius, so a client may transmit zeros.
 
 #### 5.3.6 CharSelected (S→C, opcode `0x0B`)
 
@@ -946,55 +970,77 @@ The fields after `maxLoad` contain inventory paperdoll slots, abnormal effects, 
 
 The server periodically sends NetPingRequest; the client must answer promptly with NetPing or the server will close the connection.
 
-#### 5.4.1 NetPingRequest (S→C, opcode `0xD3`)
+#### 5.4.1 NetPingRequest (S→C, opcode `0xD9`)
 
 | Offset | Field    | Type          |
 | ------ | -------- | ------------- |
-| 0      | opcode   | `u8` = `0xD3` |
+| 0      | opcode   | `u8` = `0xD9` |
 | 1      | `pingId` | `i32`         |
 
-#### 5.4.2 NetPing (C→S, opcode `0xA8`)
+Earlier protocol drafts (and most public L2 documentation) list this packet
+at `0xD3`, but in L2J Mobius CT 2.6 HighFive `0xD3 = EARTHQUAKE` and the
+ping request moved to `0xD9` (`ServerPackets.java:247`).
+
+#### 5.4.2 NetPing (C→S, opcode `0xB1`)
 
 **Observed on the wire: 5-byte body.** The reference client's live ping handler writes just the opcode and the echoed `pingId`:
 
 | Offset | Field    | Type  | Value                    |
 | ------ | -------- | ----- | ------------------------ |
-| 0      | opcode   | `u8`  | `0xA8`                   |
+| 0      | opcode   | `u8`  | `0xB1`                   |
 | 1      | `pingId` | `i32` | echo from NetPingRequest |
 
-A 13-byte variant also exists in the codebase, adding two trailing `i32` constants:
-
-| Offset | Field    | Type  | Value        |
-| ------ | -------- | ----- | ------------ |
-| 5      | reserved | `i32` | `0x00000000` |
-| 9      | unknown  | `i32` | `0x00080000` |
-
-The 13-byte class is not currently invoked at runtime; it is retained because packet captures from several official L2 clients show those trailing constants. A reimplementer should emit the **5-byte form** to match L2J Mobius, and may emit the 13-byte form when targeting more lenient servers. L2J Mobius accepts both, as long as the body begins with the opcode and a valid `pingId`.
+On CT 2.6 HighFive the server opcode handler is `ClientPackets.NET_PING`
+at `0xB1` (`ClientPackets.java:175`). Some earlier chronicle documentation
+lists the C→S ping at `0xA8`; on CT 2.6 `0xA8 = REQUEST_PACKAGE_SEND`, so
+sending a ping at `0xA8` will reach the wrong handler.
 
 ### 5.5 Representative gameplay packets
 
 These packets are not required to enter the world, but are included so that a reimplementer knows the pattern used for common commands. All are subject to the XOR cipher when §5.3.2's `encryptionFlag` is non-zero.
 
-| Opcode        | Name                                 | Body (beyond opcode)                                                                                                 |
-| ------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `0x01`        | MoveToLocation                       | `i32 targetX, i32 targetY, i32 targetZ, i32 originX, i32 originY, i32 originZ, i32 movementMode` (`1` = mouse click) |
-| `0x04`        | Action                               | `i32 objectId, i32 originX, i32 originY, i32 originZ, u8 shiftClick`                                                 |
-| `0x0A`        | AttackRequest                        | `i32 objectId, i32 originX, i32 originY, i32 originZ, u8 shiftClick`                                                 |
-| `0x14`        | **UseItem** _or_ **RequestItemList** | overloaded — see note below                                                                                          |
-| `0x17`        | DropItem                             | `i32 objectId, i32 count, i32 x, i32 y, i32 z`                                                                       |
-| `0x1B`        | RequestSocialAction                  | `i32 actionId` — see action id table below                                                                           |
-| `0x1D`        | ChangeWaitType2                      | `i32 typeStand` (`0`=sit, `1`=stand)                                                                                 |
-| `0x29`        | RequestJoinParty                     | `str playerName`                                                                                                     |
-| `0x38`        | Say2                                 | `str text, i32 chatType, [str target]` — the `target` field is present only when `chatType` = `24` (whisper)         |
-| `0x39`        | UseSkill                             | `i32 skillId, u8 ctrlPressed, u8 shiftPressed`                                                                       |
-| `0x63`        | RequestQuestList                     | _(no body)_                                                                                                          |
-| `0xD0 0x0008` | EnterGameServer / RequestManorList   | _(no body; extended packet, see §5.3.7)_                                                                             |
+All opcodes below are taken from `ClientPackets.java` in
+`c:\MyProg\l2J-Mobius-CT-2.6-HighFive\java\org\l2jmobius\gameserver\network\`.
+Earlier L2 chronicles (Interlude, Gracia, etc.) use different numbers — do
+**not** port opcodes from Interlude-era documentation.
 
-**Opcode `0x14` is overloaded C→S on HighFive.** Both `UseItem` (5-byte body: opcode + `i32 itemObjectId`) and `RequestItemList` / `RequestInventoryOpen` (1-byte body: opcode only) use the same opcode. The server disambiguates by the post-opcode body length — a 4-byte payload is a use-item request, an empty payload is an item-list request. On CT_0_Interlude the item-list opcode is `0x15` instead; for HighFive always use `0x14` with the appropriate body length.
+| Opcode        | Name                               | Body (beyond opcode)                                                                                                 |
+| ------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `0x01`        | AttackRequest (basic)              | `i32 objectId, i32 originX, i32 originY, i32 originZ, u8 shiftClick` (see also `0x32`, aliased class)                |
+| `0x0F`        | MoveToLocation                     | `i32 targetX, i32 targetY, i32 targetZ, i32 originX, i32 originY, i32 originZ, i32 movementMode` (`1` = mouse click) |
+| `0x14`        | RequestItemList                    | _(no body — just the opcode)_                                                                                        |
+| `0x17`        | RequestDropItem                    | `i32 objectId, i64 count, i32 x, i32 y, i32 z`                                                                       |
+| `0x19`        | UseItem                            | `i32 itemObjectId, i32 ctrlPressed`                                                                                  |
+| `0x1F`        | Action                             | `i32 objectId, i32 originX, i32 originY, i32 originZ, u8 shiftClick`                                                 |
+| `0x32`        | AttackRequest                      | same body as `0x01`; both opcodes dispatch to `AttackRequest` class                                                  |
+| `0x39`        | RequestMagicSkillUse               | `i32 skillId, i32 ctrlPressed, u8 shiftPressed`                                                                      |
+| `0x42`        | RequestJoinParty                   | `str playerName, i32 itemDistribution`                                                                               |
+| `0x49`        | Say2                               | `str text, i32 chatType, str target` — `target` is only read when `chatType` = `2` (whisper)                         |
+| `0x57`        | RequestRestart                     | _(no body)_                                                                                                          |
+| `0x62`        | RequestQuestList                   | _(no body)_                                                                                                          |
+| `0x63`        | RequestQuestAbort                  | `i32 questId`                                                                                                        |
+| `0xB1`        | NetPing                            | `i32 pingId` — see §5.4.2                                                                                            |
+| `0xD0 …`      | extended packets                   | all extended C→S packets (see `ExClientPackets.java`), including RequestKeyMapping (`0x0021`)                        |
 
-**Extended opcode `0xD0 0x0008` is overloaded C→S.** Both `EnterGameServer` and `RequestManorList` emit the same 3-byte body; the server interprets the packet according to the current session phase (handshake vs. in-game). A reimplementer does not usually need to send `EnterGameServer` at all — it exists in the reference implementation for CT_0-style flows.
+**Opcode `0x14` is NOT overloaded on CT 2.6 HighFive.** It is only
+`RequestItemList` with no body. `UseItem` has its own opcode (`0x19`). The
+"overload by body length" behaviour is an Interlude-era artefact and does
+not apply here.
 
-**RequestSocialAction action ids** (body is `i32`).
+**Extended packet `0xD0 0x0001` = `RequestManorList`.** The often-cited
+subopcode `0x0008` for "EnterGameServer / RequestManorList" is an
+Interlude-era carryover and is absent from CT 2.6 HighFive. A reimplementer
+does not need to send an `EnterGameServer` packet at all — the CT 2.6
+server drives the transition from character selection to world through
+`EnterWorld (0x11)`.
+
+**RequestSocialAction** has opcode `0x34` on CT 2.6 HighFive but the server
+handler is `null` in `ClientPackets.java`, i.e. not routed. Social actions
+are therefore effectively unsupported by the CT 2.6 server build; the id
+table below is retained only as protocol-level reference and is action-ids
+sent via other means (e.g. `RequestActionUse 0x56`).
+
+**Social action ids** (body is `i32`).
 
 | Id   | Action           |
 | ---- | ---------------- |
@@ -1024,7 +1070,7 @@ Once the client reaches `IN_GAME`, the server begins streaming a large set of op
 
 The two opcodes a minimal client **must** handle after `IN_GAME`:
 
-- `0xD3` **NetPingRequest** — reply with NetPing (§5.4) or the server will drop the connection after ~60 seconds.
+- `0xD9` **NetPingRequest** — reply with NetPing (`0xB1`, §5.4) or the server will drop the connection after ~60 seconds.
 - `0x32` **UserInfo** — sent periodically with updated player state; parse at least the leading fields described in §5.3.9 to keep the simulated world up to date.
 
 Everything else can be treated as opaque until the client chooses to decode a specific feature. The reference dispatcher in the reference implementation is the canonical template for a HighFive dispatcher.
@@ -1069,8 +1115,8 @@ Client                 Login Server                     Game Server
   |                                                   |       |
   |======= IN_GAME =========================================|
   |                                                   |       |
-  |<-- NetPingRequest (0xD3) --------------------------|       |
-  |--- NetPing (0xA8) --------------------------------->      |
+  |<-- NetPingRequest (0xD9) --------------------------|       |
+  |--- NetPing (0xB1) --------------------------------->      |
   |                ...                                        |
 ```
 
@@ -1156,7 +1202,7 @@ send_login_encrypted(loginSock, body, currentLoginKey)
 
 pkt = read_framed(loginSock)
 po = decrypt_login(pkt.body, currentLoginKey)
-if po[0] == 0x06: abort("PlayFail reason=" + str(i32_le(po[1:5])))
+if po[0] == 0x06: abort("PlayFail reason=" + str(po[1]))
 assert po[0] == 0x07
 playOkId1 = i32_le(po[1:5])
 playOkId2 = i32_le(po[5:9])
@@ -1213,10 +1259,10 @@ state = IN_GAME
 loop forever:
     pkt  = read_framed(gameSock)
     body = decrypt_game(pkt.body, key_sc)
-    if body[0] == 0xD3:
+    if body[0] == 0xD9:
         pingId = i32_le(body[1:5])
-        # L2J Mobius HighFive observed form: opcode + pingId only (5-byte body).
-        pong   = bytes([0xA8]) + i32_le(pingId)
+        # L2J Mobius HighFive: opcode 0xB1 + pingId (5-byte body).
+        pong   = bytes([0xB1]) + i32_le(pingId)
         send_game_encrypted(gameSock, pong, key_cs)
     else:
         handle_world_packet(body)
@@ -1305,8 +1351,8 @@ Use this list when porting to a new language. Tick every box to have a working a
 - [ ] Accept UserInfo (0x32) directly in `WAIT_CHAR_SELECTED` state as an implicit confirmation.
 - [ ] RequestKeyMapping extended packet `0xD0 0x21` followed by EnterWorld (0x11) + 104 zero bytes.
 - [ ] Reach IN_GAME upon receiving UserInfo (0x32); parse at least the initial fields (x, y, z, objectId, name, level, HP/MP).
-- [ ] NetPing (0xA8) answer to every NetPingRequest (0xD3) with a **5-byte body** = `u8 0xA8 + i32 pingId`. The legacy 13-byte form (`+ 0x00000000 + 0x00080000`) is optional.
-- [ ] Handle the overloaded `0x14` opcode correctly on C→S: 5-byte body = UseItem, 1-byte body = RequestItemList.
+- [ ] NetPing (`0xB1`) answer to every NetPingRequest (`0xD9`) with a **5-byte body** = `u8 0xB1 + i32 pingId`. Do not use `0xA8` / `0xD3` — those are different packets on CT 2.6 HighFive.
+- [ ] Do **not** treat `0x14` as overloaded on CT 2.6 — it is only `RequestItemList`. `UseItem` is `0x19`.
 - [ ] Rotate `key_sc[8..12]` by the body size for **every** decrypted packet — even the ones whose opcode is unrecognised — or the XOR stream desynchronises (§5.6).
 - [ ] Never disconnect on an unknown opcode; log and drop the packet instead (§5.6).
 
@@ -1320,15 +1366,15 @@ Use this list when porting to a new language. Tick every box to have a working a
 | Expected Init protocol revision   | `0x0000C621`                                                   | Init (§4.3)              |
 | Static login Blowfish key         | `6B 60 CB 5B 82 CE 90 B1 CC 2B 6C 55 6C 6C 6C 6C`              | Init decryption (§3.5)   |
 | Static game XOR tail              | `C8 27 93 01 A1 6C 31 97`                                      | XOR key (§3.7)           |
-| RequestServerList marker byte     | `0x05` at body offset 9 (HighFive)                             | §4.12                    |
-| RequestGGAuth body shape          | 32 bytes; opcode + sessionId + 19 zeros + i32 GG tag + 4 zeros | §4.13                    |
+| RequestServerList minimal body    | 9 bytes (opcode + 2×i32); the server ignores any trailer       | §4.12                    |
+| RequestGGAuth body shape          | 32 bytes; server reads 21 (opcode + sessionId + 16 zeros)      | §4.13                    |
 | RequestAuthLogin body shape       | 184 bytes; opcode + 128-byte RSA + 55-byte GG trailer          | §4.10                    |
 | RSA plaintext layout              | 94 zero / 14 login / 2 zero / 16 password / 2 zero = 128 bytes | §3.4                     |
 | RSA public exponent               | `65537` (`0x10001`)                                            | §3.4                     |
-| CharacterSelected padding         | 14 zero bytes after `slotIndex`                                | §5.3.5                   |
+| CharacterSelected trailing fields | `i16 + 3×i32` (= 14 bytes of typed zeros) after `slotIndex`    | §5.3.5                   |
 | EnterWorld padding                | 104 zero bytes after opcode                                    | §5.3.8                   |
-| NetPing observed wire form        | opcode + `i32 pingId` (5-byte body)                            | §5.4.2                   |
-| NetPing legacy trailing constants | `0x00000000`, `0x00080000` (optional)                          | §5.4.2                   |
+| NetPingRequest opcode (S→C)       | `0xD9`                                                         | §5.4.1                   |
+| NetPing opcode (C→S)              | `0xB1`, 5-byte body (`u8 + i32 pingId`)                        | §5.4.2                   |
 | Maximum packet length             | `0xFFFF` (= 65 533-byte body)                                  | §2.3                     |
 
 **LoginFail reason codes** (§4.4):
@@ -1368,11 +1414,16 @@ Use this list when porting to a new language. Tick every box to have a working a
 | `6` | Yes       | `13` | Dance   |
 | `7` | Bow       |      |         |
 
-**Overloaded C→S opcodes** (§5.5):
+**Duplicated C→S opcodes on CT 2.6 HighFive** (§5.5):
 
-| Opcode        | First interpretation  | Second interpretation         | Disambiguation |
-| ------------- | --------------------- | ----------------------------- | -------------- |
-| `0x14`        | UseItem (4-byte body) | RequestItemList (0-byte body) | Body length    |
-| `0xD0 0x0008` | EnterGameServer       | RequestManorList              | Session phase  |
+| Opcode | Handler class   | Notes                                                       |
+| ------ | --------------- | ----------------------------------------------------------- |
+| `0x01` | `AttackRequest` | basic attack; same class also registered at `0x32`          |
+| `0x32` | `AttackRequest` | alternate attack opcode; identical behaviour to `0x01`      |
+
+There is no body-length or phase-based opcode overloading on CT 2.6 — the
+Interlude-era claims about `0x14` (UseItem/RequestItemList) and
+`0xD0 0x0008` (EnterGameServer/RequestManorList) do not apply to this
+chronicle.
 
 ---
