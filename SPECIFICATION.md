@@ -3,9 +3,9 @@
 **Chronicle:** HighFive
 **Protocol version:** `273` (also valid: `267`, `268`, `271` — same wire format)
 **Server flavor:** L2J Mobius (CT 2.6 HighFive)
-**Scope:** this document describes the complete wire protocol used between a game client and the two servers it talks to (the Login Server and the Game Server), plus the exact sequence of packets needed to automatically log in and enter the world as a character. It is language-agnostic and is intended to let another developer (or another LLM) re-implement a working client in any language.
+**Scope:** this document describes the complete wire protocol used between a game client and the two servers it talks to (the Login Server and the Game Server), plus the exact sequence of packets needed to automatically log in and enter the world as a character. It is language-agnostic and is intended to let a developer re-implement a working client in any language.
 
-File paths are cited only for cross-checking; the spec itself does not depend on any language feature or library beyond "raw TCP socket", "RSA (no padding)", and "Blowfish ECB".
+Server-side file paths (e.g. `*.java`) are cited only for cross-checking against the L2J Mobius CT 2.6 source tree; the spec itself does not depend on any language feature or library beyond "raw TCP socket", "RSA (no padding)", and "Blowfish ECB".
 
 ---
 
@@ -278,7 +278,7 @@ Both `key_cs` and `key_sc` evolve independently. If the two sides drift out of s
 
 ### 3.8 Test vectors
 
-The following vectors were captured from the reference implementation and can be used to self-verify a port. All input/output is expressed as hex bytes in wire order; no language features or library APIs are implied.
+The following vectors can be used to self-verify a port. All input/output is expressed as hex bytes in wire order; no language features or library APIs are implied.
 
 **3.8.1 Blowfish-ECB with the static login key.** Port-level sanity check that the Blowfish key schedule uses little-endian `bytesTo32Bits` (§3.1).
 
@@ -417,7 +417,7 @@ the first 170 are meaningful. Bytes 170..175 are zero pad and may be ignored.
 | 0      | opcode   | `u8` = `0x01` |
 | 1      | `reason` | `u8`          |
 
-Reason codes recognised by the reference client (all codes are hex):
+Reason codes (all codes are hex):
 
 | Code   | Meaning                   |
 | ------ | ------------------------- |
@@ -495,7 +495,7 @@ connection.
 | 0      | opcode   | `u8` = `0x06` |
 | 1      | `reason` | `u8`          |
 
-Reason codes recognised by the reference client:
+Reason codes:
 
 | Code   | Meaning                 |
 | ------ | ----------------------- |
@@ -558,7 +558,7 @@ and the unscrambled modulus from Init. The trailing 55 bytes after the
 ciphertext are GameGuard-related — L2J Mobius CT 2.6 does not validate
 them and accepts an all-zero blob, so a reimplementer that does not need
 to defeat real GameGuard may transmit zeros for everything from offset 129
-onward (the `l2py` reference client takes this shortcut).
+onward.
 
 **Alternative "new auth" mode (optional on the server).**
 `RequestAuthLogin.java` supports a `newAuthMethod` branch that expects
@@ -602,8 +602,8 @@ Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 | 20     | reserved       | `bytes[4]`   | observed all-zero                                  |
 
 The trailing 14 bytes (offsets 10..23) are GameGuard padding. L2J Mobius
-accepts a 10-byte body (just opcode+ids+serverId) as well — this is what
-the `l2py` reference client transmits.
+accepts a 10-byte body (just opcode+ids+serverId) as well, which is the
+recommended minimal form for a reimplementer.
 
 ### 4.12 RequestServerList (C→S, opcode `0x05`)
 
@@ -619,9 +619,9 @@ Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 L2J Mobius only reads the two i32 session tokens (`RequestServerList.java`
 calls `remaining() >= 8` and reads two ints), so everything from offset 9
 onward is ignored by the server. The server accepts a **9-byte body**
-(`opcode + loginOkId1 + loginOkId2`) — this is what the `l2py` reference
-client transmits. The `0x05` byte at offset 9 observed on wire from the
-official client is not a required flag/version marker.
+(`opcode + loginOkId1 + loginOkId2`), which is the recommended minimal
+form. The `0x05` byte at offset 9 observed on wire from the official
+client is not a required flag/version marker.
 
 ### 4.13 RequestGGAuth (C→S, opcode `0x07`)
 
@@ -641,8 +641,7 @@ was `0xA000C01D` for `sessionId = 0x1AA000C0` (sessionId rotated
 right one byte and the high byte XOR'd with `0x07`). L2J Mobius CT 2.6
 does not validate this tag and accepts an all-zero blob, so a
 reimplementer that does not need to defeat real GameGuard may transmit a
-21-byte body with just `opcode + sessionId + 16 zero bytes` (this is what
-the `l2py` reference client does).
+21-byte body with just `opcode + sessionId + 16 zero bytes`.
 
 The four magic constants `0x123 / 0x4567 / 0x89AB / 0xCDEF` documented for
 older chronicles do **not** appear in HighFive captures.
@@ -843,7 +842,7 @@ Every multi-byte field below is little-endian. Opcodes are the first byte of the
 
 L2J Mobius CT 2.6 only consumes the first 5 bytes. The official client
 nonetheless sends a 265-byte body (267 bytes on the wire). A reimplementer may transmit only the 5-byte minimum form
-— the `l2py` reference client does this and the server accepts it.
+and the server will accept it.
 
 #### 5.3.2 CryptInit (S→C, opcode `0x2E`) — plaintext
 
@@ -859,9 +858,9 @@ nonetheless sends a 265-byte body (267 bytes on the wire). A reimplementer may t
 
 After receiving CryptInit, the client builds `key_cs` and `key_sc` as `xorKey || staticTail` (§3.7) and enables encryption according to `encryptionFlag`.
 
-**L2J Mobius CT 2.6 HighFive quirk:** the reference server sends `encryptionFlag = 0`, which disables the XOR stream cipher for the entire session — every subsequent packet (including AuthRequest) travels as plaintext. A correct client must honor this flag and only apply the XOR cipher when it is non-zero.
+**L2J Mobius CT 2.6 HighFive quirk:** the server sends `encryptionFlag = 0`, which disables the XOR stream cipher for the entire session — every subsequent packet (including AuthRequest) travels as plaintext. A correct client must honor this flag and only apply the XOR cipher when it is non-zero.
 
-The reference client passes `encryptionFlag` directly into its crypt layer (`this.crypt.initKey(xorKeyData, useEncryption)`), and the crypt layer's `encrypt`/`decrypt` methods short-circuit to the identity function when `enabled = false`. In other words, a reimplementer is not required to special-case "encryption disabled" in the packet dispatcher — a no-op crypt object is the cleanest factoring.
+A clean way to structure the crypt layer is to pass `encryptionFlag` into an `initKey(xorKeyData, useEncryption)` method and have `encrypt`/`decrypt` short-circuit to the identity function when `useEncryption = false`. In other words, a reimplementer is not required to special-case "encryption disabled" in the packet dispatcher — a no-op crypt object is the cleanest factoring.
 
 #### 5.3.3 AuthRequest (C→S, opcode `0x2B`) — first packet after CryptInit (encrypted iff `CryptInit.encryptionFlag ≠ 0`)
 
@@ -879,8 +878,7 @@ The reference client passes `encryptionFlag` directly into its crypt layer (`thi
 it wrong silently breaks auth on L2J Mobius. The 16-byte trailing block
 is sent by the official client (observed as a 49-byte body for
 `username = "qwerty"`); L2J Mobius does not read past
-`loginOkId2`, so a reimplementer may omit the trailer entirely (the
-`l2py` reference client does).
+`loginOkId2`, so a reimplementer may omit the trailer entirely.
 
 #### 5.3.4 CharSelectionInfo (S→C, opcode `0x09`)
 
@@ -983,7 +981,7 @@ ping request moved to `0xD9` (`ServerPackets.java:247`).
 
 #### 5.4.2 NetPing (C→S, opcode `0xB1`)
 
-**Observed on the wire: 5-byte body.** The reference client's live ping handler writes just the opcode and the echoed `pingId`:
+**Observed on the wire: 5-byte body.** A minimal ping reply writes just the opcode and the echoed `pingId`:
 
 | Offset | Field    | Type  | Value                    |
 | ------ | -------- | ----- | ------------------------ |
@@ -1073,13 +1071,13 @@ The two opcodes a minimal client **must** handle after `IN_GAME`:
 - `0xD9` **NetPingRequest** — reply with NetPing (`0xB1`, §5.4) or the server will drop the connection after ~60 seconds.
 - `0x32` **UserInfo** — sent periodically with updated player state; parse at least the leading fields described in §5.3.9 to keep the simulated world up to date.
 
-Everything else can be treated as opaque until the client chooses to decode a specific feature. The reference dispatcher in the reference implementation is the canonical template for a HighFive dispatcher.
+Everything else can be treated as opaque until the client chooses to decode a specific feature.
 
 ---
 
 ## 6. Automatic enter-game algorithm
 
-This section describes the exact sequence of steps the reference client performs to go from "cold start" to "character walking in the world", using only the configuration inputs `username`, `password`, `loginHost`, `loginPort`, `serverId`, `charSlot`, and `protocol = 273`.
+This section describes the exact sequence of steps a client must perform to go from "cold start" to "character walking in the world", using only the configuration inputs `username`, `password`, `loginHost`, `loginPort`, `serverId`, `charSlot`, and `protocol = 273`.
 
 ### 6.1 Sequence diagram
 
@@ -1272,15 +1270,15 @@ loop forever:
 
 | Input       | Typical value | Notes                                                               |
 | ----------- | ------------- | ------------------------------------------------------------------- |
-| `username`  | string        | Login account (the reference client defaults to `qwerty`)           |
-| `password`  | string        | Password (defaults to `qwerty`)                                     |
+| `username`  | string        | Login account                                                       |
+| `password`  | string        | Password                                                            |
 | `loginHost` | IPv4/DNS      | Login Server address                                                |
 | `loginPort` | `2106`        |                                                                     |
 | `protocol`  | `273`         | Must match a HighFive-compatible value (also `267`, `268`, `271`)   |
 | `serverId`  | `1..255`      | The numeric id of the desired Game Server inside the ServerList     |
 | `charSlot`  | `0..6`        | Which existing character to log in as (no auto-create is performed) |
 
-The reference implementation reads these from environment variables (`L2_USERNAME`, `L2_PASSWORD`, `L2_LOGIN_IP`, `L2_LOGIN_PORT`, `L2_PROTOCOL`, `L2_SERVER_ID`, `L2_CHAR_SLOT`). A reimplementer can use any equivalent source.
+A reimplementer can source these values from any suitable mechanism (configuration file, environment variables, CLI flags, etc.).
 
 ### 6.4 Capture cross-reference
 
