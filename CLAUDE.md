@@ -79,6 +79,7 @@ When touching packet encoding, crypto, or adding new opcodes, the authoritative 
 - [docs/AUTOLOGIN.md](docs/AUTOLOGIN.md) — full pseudocode for the three-phase login → game → in-game sequence.
 - [docs/CONSTANTS.md](docs/CONSTANTS.md) — LoginFail/PlayFail reason codes, social-action ids, duplicate opcodes across packet directions.
 - [docs/CHECKLIST.md](docs/CHECKLIST.md) — porting checklist, also useful as a correctness smoke-test list.
+- [docs/SKILLS.md](docs/SKILLS.md) — class skill trees (1st/2nd/3rd) for every playable class: skill id, name, max level, learn-level, SP total. Generated from the L2JMobius server XML by [scripts/gen_skills_doc.py](scripts/gen_skills_doc.py); rerun that script to refresh.
 
 ## Gotchas
 
