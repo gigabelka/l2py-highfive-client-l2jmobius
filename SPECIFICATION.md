@@ -404,8 +404,8 @@ that hold the rolling-XOR seed and 4 unused bytes — see §3.3):
 | 169    | trailing block     | `bytes[15]`  | 15   | starts with a `u8 0x00` terminator, then two `i32` + `u16` of GG/extra data |
 
 Total payload: **184 bytes**. The trailing 15 bytes after `blowfishKey` are
-present on every L2J Mobius CT 2.6 Init and were observed in
-`good_sesion.txt` Frame 6 as `00 00 00 00 00 5b a8 44 f7 00 00 00 00 00 00`.
+present on every L2J Mobius CT 2.6 Init and typically look like
+`00 00 00 00 00 5b a8 44 f7 00 00 00 00 00 00`.
 A reimplementer can leave them as opaque — only the first 169 bytes are
 required for the auto-login flow.
 
@@ -446,7 +446,7 @@ Codes outside this set are logged as `Unknown reason (0x…)` and treated as fat
 | 17     | `accessLevel`  | `i32`       | observed `0x000003EA` for a normal account           |
 | 21     | trailing block | `bytes[35]` | mostly zeros plus a 7-byte tail used by L2J Mobius   |
 
-Total payload: **56 bytes** (Frame 11 in `good_sesion.txt`).
+Total payload: **56 bytes**.
 
 A reimplementer only needs to keep `loginOkId1` and `loginOkId2`; everything
 from offset 9 onward is opaque and may be skipped.
@@ -476,8 +476,8 @@ from offset 9 onward is opaque and may be skipped.
 | 16     | `flags`         | `i32`      | informational                                          |
 | 20     | reserved        | `u8`       |                                                        |
 
-`good_sesion.txt` Frame 17 (1-server response, 40-byte body) shows a
-16-byte trailing block after the single record:
+A typical 1-server response (40-byte body) shows a 16-byte trailing block
+after the single record:
 `00 00 01 02 01 00 3e 2d 03 e0 67 16 7f 24 1c 0d`. This block holds the
 per-server character count summary and various L2J Mobius account flags.
 A reimplementer doing auto-login can ignore everything after the matched
@@ -511,7 +511,7 @@ Codes outside this set are logged as `Unknown reason (0x…)`. The legacy Interl
 | 5      | `playOkId2`    | `i32`       | session token #4                                   |
 | 9      | trailing block | `bytes[7]`  | observed `i32 + i16 + u8` of opaque GG/queue data |
 
-Total payload: **16 bytes** (Frame 20 in `good_sesion.txt`).
+Total payload: **16 bytes**.
 
 Both tokens must be remembered — they are sent later in the game AuthRequest.
 The trailing 7 bytes are not consumed by the auto-login flow.
@@ -525,7 +525,7 @@ The trailing 7 bytes are not consumed by the auto-login flow.
 | 5      | reserved         | `bytes[16]` | observed all-zero                                    |
 | 21     | GG nonce         | `bytes[11]` | per-session GameGuard payload, opaque to the client |
 
-Total payload: **32 bytes** (Frame 8 in `good_sesion.txt`).
+Total payload: **32 bytes**.
 
 In practice `ggAuthResponse == sessionId` on every L2J Mobius CT 2.6 capture
 — the reference Java server simply rewrites the first i32 of GGAuth to the
@@ -537,7 +537,7 @@ required for the auto-login flow.
 
 Body size: **184 bytes** (before padding/encryption). After the §3.6
 encryption pipeline this becomes a 192-byte ciphertext + 2-byte length
-prefix = 194 bytes on the wire (matches Frame 10 in `good_sesion.txt`).
+prefix = 194 bytes on the wire.
 
 | Offset | Field             | Type         | Size | Notes                                              |
 | ------ | ----------------- | ------------ | ---- | -------------------------------------------------- |
@@ -559,8 +559,7 @@ them and accepts an all-zero blob, so a reimplementer that does not need
 to defeat real GameGuard may transmit zeros for everything from offset 129
 onward (the `l2py` reference client takes this shortcut).
 
-`good_sesion.txt` Frame 10 trailing 55 bytes (offsets 129..183), captured
-from a real official client:
+Trailing 55 bytes (offsets 129..183), captured from a real official client:
 
 ```
 c0 00 a0 1a 00 00 00 00 00 00 00 00 00 00 00 00
@@ -571,8 +570,7 @@ ed 19 5f 2b d2 ed 9f e7 2b 31 04 39 00 00 00 00
 
 ### 4.11 RequestServerLogin (C→S, opcode `0x02`)
 
-Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes
-(Frame 19 in `good_sesion.txt`).
+Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 
 | Offset | Field          | Type         | Notes                                              |
 | ------ | -------------- | ------------ | -------------------------------------------------- |
@@ -590,8 +588,7 @@ the `l2py` reference client transmits.
 
 ### 4.12 RequestServerList (C→S, opcode `0x05`)
 
-Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes
-(Frame 15 in `good_sesion.txt`).
+Body size: **24 bytes** (before padding/encryption). Wire = 34 bytes.
 
 | Offset | Field          | Type         | Notes                                              |
 | ------ | -------------- | ------------ | -------------------------------------------------- |
@@ -611,8 +608,7 @@ the `l2py` reference client transmits.
 
 ### 4.13 RequestGGAuth (C→S, opcode `0x07`)
 
-Body size: **32 bytes** (before padding/encryption). Wire = 42 bytes
-(Frame 7 in `good_sesion.txt`).
+Body size: **32 bytes** (before padding/encryption). Wire = 42 bytes.
 
 | Offset | Field            | Type         | Notes                                         |
 | ------ | ---------------- | ------------ | --------------------------------------------- |
@@ -623,8 +619,8 @@ Body size: **32 bytes** (before padding/encryption). Wire = 42 bytes
 | 28     | reserved         | `bytes[4]`   | observed all-zero                             |
 
 The 4-byte "GG client tag" at offset 24 is computed by the official
-client's GameGuard module from the `sessionId`. The captured value in
-Frame 7 was `0xA000C01D` for `sessionId = 0x1AA000C0` (sessionId rotated
+client's GameGuard module from the `sessionId`. A sample observed value
+was `0xA000C01D` for `sessionId = 0x1AA000C0` (sessionId rotated
 right one byte and the high byte XOR'd with `0x07`). L2J Mobius CT 2.6
 does not validate this tag and accepts an all-zero blob, so a
 reimplementer that does not need to defeat real GameGuard may transmit a
@@ -661,7 +657,7 @@ EA 03 00 00                                      ; accessLevel = 0x000003EA
 <31 trailing bytes — opaque>                     ; offsets 0x15..0x37
 ```
 
-**4.14.3 ServerList (S→C, `0x04`) with one record — 40 bytes** (§4.6). The 16-byte trailing block is reproduced verbatim from `good_sesion.txt` Frame 17 (1-server response).
+**4.14.3 ServerList (S→C, `0x04`) with one record — 40 bytes** (§4.6). The 16-byte trailing block is reproduced verbatim from an observed 1-server response.
 
 ```
 04                                               ; opcode = 0x04
@@ -716,7 +712,7 @@ F0 DE BC 9A                                      ; playOkId2 = 0x9ABCDEF0
 0F 00 00 00                                      ; reason = 0x0F "Too many players"
 ```
 
-**4.14.8 RequestAuthLogin (C→S, `0x00`) — 184 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the trailing 55 bytes shown below are reproduced verbatim from `good_sesion.txt` Frame 10.
+**4.14.8 RequestAuthLogin (C→S, `0x00`) — 184 bytes, pre-encryption** (§4.10). The RSA ciphertext is 128 opaque bytes; the trailing 55 bytes shown below are reproduced verbatim from an observed capture.
 
 ```
 00                                               ; opcode = 0x00
@@ -829,8 +825,7 @@ Every multi-byte field below is little-endian. Opcodes are the first byte of the
 | 5      | trailing block | `bytes[260]` | client build-info / hardware fingerprint, opaque |
 
 L2J Mobius CT 2.6 only consumes the first 5 bytes. The official client
-nonetheless sends a 265-byte body (`good_sesion.txt` Frame 28, 267 bytes
-on the wire). A reimplementer may transmit only the 5-byte minimum form
+nonetheless sends a 265-byte body (267 bytes on the wire). A reimplementer may transmit only the 5-byte minimum form
 — the `l2py` reference client does this and the server accepts it.
 
 #### 5.3.2 CryptInit (S→C, opcode `0x2E`) — plaintext
@@ -865,8 +860,8 @@ The reference client passes `encryptionFlag` directly into its crypt layer (`thi
 
 **The field order `play2, play1, login1, login2` is mandatory** — getting
 it wrong silently breaks auth on L2J Mobius. The 16-byte trailing block
-is sent by the official client (verified in `good_sesion.txt` Frame 30,
-49-byte body for `username = "qwerty"`); L2J Mobius does not read past
+is sent by the official client (observed as a 49-byte body for
+`username = "qwerty"`); L2J Mobius does not read past
 `loginOkId2`, so a reimplementer may omit the trailer entirely (the
 `l2py` reference client does).
 
@@ -1243,25 +1238,25 @@ The reference implementation reads these from environment variables (`L2_USERNAM
 
 ### 6.4 Capture cross-reference
 
-All packet sizes and trailing-block hex strings in §4 were verified by
-decrypting `good_sesion.txt` (an L2 official client ↔ L2J Mobius CT 2.6
-HighFive capture). Frame map:
+All packet sizes and trailing-block hex strings in §4 were verified
+against live L2 official client ↔ L2J Mobius CT 2.6 HighFive captures.
+Observed packet sizes:
 
-| Frame | Direction | Wire | Body | Section | Notes                                |
-| ----- | --------- | ---- | ---- | ------- | ------------------------------------ |
-| 6     | S→C       | 196  | 184  | §4.3    | Init                                 |
-| 7     | C→S       | 42   | 32   | §4.13   | RequestGGAuth                        |
-| 8     | S→C       | 42   | 32   | §4.9    | GGAuth (i32 echoes sessionId)        |
-| 10    | C→S       | 194  | 184  | §4.10   | RequestAuthLogin                     |
-| 11    | S→C       | 66   | 56   | §4.5    | LoginOk                              |
-| 15    | C→S       | 34   | 24   | §4.12   | RequestServerList                    |
-| 17    | S→C       | 50   | 40   | §4.6    | ServerList (1 record + 16-byte tail) |
-| 19    | C→S       | 34   | 24   | §4.11   | RequestServerLogin                   |
-| 20    | S→C       | 26   | 16   | §4.8    | PlayOk                               |
-| 28    | C→S       | 267  | 265  | §5.3.1  | ProtocolVersion + 260-byte client tail (server reads only the first 5 bytes) |
-| 29    | S→C       | 25   | 23   | §5.3.2  | CryptInit (plaintext, `encryptionFlag = 0`) |
-| 30    | C→S       | 49   | 47   | §5.3.3  | AuthRequest (`username="qwerty"`, includes 16-byte trailer) |
-| 33    | C→S       | 21   | 19   | §5.3.5  | CharacterSelected                    |
+| Direction | Wire | Body | Section | Notes                                |
+| --------- | ---- | ---- | ------- | ------------------------------------ |
+| S→C       | 196  | 184  | §4.3    | Init                                 |
+| C→S       | 42   | 32   | §4.13   | RequestGGAuth                        |
+| S→C       | 42   | 32   | §4.9    | GGAuth (i32 echoes sessionId)        |
+| C→S       | 194  | 184  | §4.10   | RequestAuthLogin                     |
+| S→C       | 66   | 56   | §4.5    | LoginOk                              |
+| C→S       | 34   | 24   | §4.12   | RequestServerList                    |
+| S→C       | 50   | 40   | §4.6    | ServerList (1 record + 16-byte tail) |
+| C→S       | 34   | 24   | §4.11   | RequestServerLogin                   |
+| S→C       | 26   | 16   | §4.8    | PlayOk                               |
+| C→S       | 267  | 265  | §5.3.1  | ProtocolVersion + 260-byte client tail (server reads only the first 5 bytes) |
+| S→C       | 25   | 23   | §5.3.2  | CryptInit (plaintext, `encryptionFlag = 0`) |
+| C→S       | 49   | 47   | §5.3.3  | AuthRequest (`username="qwerty"`, includes 16-byte trailer) |
+| C→S       | 21   | 19   | §5.3.5  | CharacterSelected                    |
 
 Body sizes are derived as `wire − 2` for plaintext frames and as
 `wire − 2 − pad` for login-encrypted frames, where `pad` is the
