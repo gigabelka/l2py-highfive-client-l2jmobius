@@ -311,13 +311,14 @@ class UserInfoPacket(ServerPacket):
 
 
 class NetPingRequestPacket(ServerPacket):
-    """Запрос keep-alive от сервера (опкод 0xD3).
+    """Запрос keep-alive от сервера (опкод 0xD9, CT 2.6 HighFive).
 
-    Клиент обязан ответить NetPing (0xA8) с тем же ping_id, иначе
-    сервер закроет соединение через ~60 секунд.
+    На CT 2.6 HighFive `0xD3 = EARTHQUAKE`, ping-request перенесён на `0xD9`.
+    Клиент обязан ответить NetPing (0xB1) с тем же ping_id, иначе сервер
+    закроет соединение через ~60 секунд.
     """
 
-    opcode: ClassVar[int] = 0xD3
+    opcode: ClassVar[int] = 0xD9
     __slots__ = ("ping_id",)
 
     def __init__(self, data: bytes) -> None:

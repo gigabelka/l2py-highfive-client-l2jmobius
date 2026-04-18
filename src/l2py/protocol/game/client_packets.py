@@ -156,12 +156,12 @@ class RequestKeyMappingPacket(ClientPacket):
 
 
 class NetPingPacket(ClientPacket):
-    """Ответ на NetPingRequest сервера (опкод 0xA8).
+    """Ответ на NetPingRequest сервера (опкод 0xB1, CT 2.6 HighFive).
 
     5-байтовая форма: opcode + echoed pingId.
     """
 
-    opcode: ClassVar[int] = 0xA8
+    opcode: ClassVar[int] = 0xB1
     __slots__ = ("ping_id",)
 
     def __init__(self, ping_id: int) -> None:
