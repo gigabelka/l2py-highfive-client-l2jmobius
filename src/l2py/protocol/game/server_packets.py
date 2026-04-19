@@ -10,7 +10,7 @@ TODO: Опкоды нужно уточнить по исходникам L2JMobi
 from typing import ClassVar
 
 from l2py.models.character import CharacterInfo
-from l2py.protocol.base import ServerPacket
+from l2py.protocol.base import PacketReader, ServerPacket
 
 
 class KeyPacket(ServerPacket):
@@ -256,58 +256,112 @@ class CharSelectedPacket(ServerPacket):
 
 
 class UserInfoPacket(ServerPacket):
-    """Пакет информации о пользователе (S).
+    """UserInfo (S→C, opcode 0x32).
 
-    Отправляется после EnterWorld.
-    Содержит полную информацию о персонаже в мире.
-
-    TODO: Уточнить опкод для High Five.
-    High Five использует inner opcode (обычно 0x04 внутри 0x32).
+    Парсит документированный префикс HighFive (см. docs/PROTOCOL.md §UserInfo):
+    координаты, heading, objectId, name, race/sex/class/level, exp, STR..MEN,
+    maxHp/curHp, maxMp/curMp, sp, curLoad/maxLoad. Хвост (paperdoll, combat stats,
+    speeds, title, clan, abnormals, vitality) не парсится детально — его точный
+    layout зависит от сборки, поэтому после префикса поля не читаются, а остаток
+    сохраняется в `raw_tail` для отладки.
     """
 
     opcode: ClassVar[int] = 0x32
-    __slots__ = ("character",)
+    __slots__ = (
+        "character",
+        "x", "y", "z", "heading", "object_id", "name",
+        "race", "sex", "class_id", "level",
+        "exp",
+        "str_", "dex", "con", "int_", "wit", "men",
+        "max_hp", "cur_hp", "max_mp", "cur_mp",
+        "sp", "cur_load", "max_load",
+        "active_weapon_item",
+        "raw_tail",
+    )
 
     def __init__(self, data: bytes) -> None:
-        """Инициализация и парсинг пакета.
-
-        Args:
-            data: Данные пакета (без опкода).
-        """
         self.character: CharacterInfo | None = None
+        self.x = 0
+        self.y = 0
+        self.z = 0
+        self.heading = 0
+        self.object_id = 0
+        self.name = ""
+        self.race = 0
+        self.sex = 0
+        self.class_id = 0
+        self.level = 0
+        self.exp = 0
+        self.str_ = 0
+        self.dex = 0
+        self.con = 0
+        self.int_ = 0
+        self.wit = 0
+        self.men = 0
+        self.max_hp = 0
+        self.cur_hp = 0
+        self.max_mp = 0
+        self.cur_mp = 0
+        self.sp = 0
+        self.cur_load = 0
+        self.max_load = 0
+        self.active_weapon_item = 0
+        self.raw_tail = b""
         super().__init__(data)
 
     def _read(self) -> None:
-        """Парсит начальные поля UserInfo по SPECIFICATION §5.3.9.
-
-        Полные поля (paperdoll, abnormal effects и т.д.) опускаются —
-        для состояния IN_GAME достаточно координат, имени и базовых атрибутов.
-        """
+        r = self._reader
         try:
-            x = self._reader.read_int32()
-            y = self._reader.read_int32()
-            z = self._reader.read_int32()
-            self._reader.read_int32()
-            object_id = self._reader.read_int32()
-            name = self._reader.read_string()
-            race = self._reader.read_int32()
-            sex = self._reader.read_int32()
-            class_id = self._reader.read_int32()
-            level = self._reader.read_int32()
-
-            self.character = CharacterInfo(
-                name=name,
-                race=race,
-                class_id=class_id,
-                level=level,
-                sex=sex,
-                x=x,
-                y=y,
-                z=z,
-                object_id=object_id,
-            )
+            self.x = r.read_int32()
+            self.y = r.read_int32()
+            self.z = r.read_int32()
+            self.heading = r.read_int32()
+            self.object_id = r.read_int32()
+            self.name = r.read_string()
+            self.race = r.read_int32()
+            self.sex = r.read_int32()
+            self.class_id = r.read_int32()
+            self.level = r.read_int32()
+            self.exp = r.read_int64()
+            self.str_ = r.read_int32()
+            self.dex = r.read_int32()
+            self.con = r.read_int32()
+            self.int_ = r.read_int32()
+            self.wit = r.read_int32()
+            self.men = r.read_int32()
+            self.max_hp = r.read_int32()
+            self.cur_hp = r.read_int32()
+            self.max_mp = r.read_int32()
+            self.cur_mp = r.read_int32()
+            self.sp = r.read_int32()
+            self.cur_load = r.read_int32()
+            self.max_load = r.read_int32()
+            self.active_weapon_item = r.read_int32()
         except Exception:
             pass
+
+        self.character = CharacterInfo(
+            name=self.name,
+            race=self.race,
+            class_id=self.class_id,
+            level=self.level,
+            sex=self.sex,
+            x=self.x,
+            y=self.y,
+            z=self.z,
+            hp=float(self.cur_hp),
+            mp=float(self.cur_mp),
+            max_hp=float(self.max_hp),
+            max_mp=float(self.max_mp),
+            sp=self.sp,
+            exp=self.exp,
+            object_id=self.object_id,
+        )
+
+        try:
+            self.raw_tail = r.read_bytes(r.remaining())
+        except Exception:
+            self.raw_tail = b""
 
 
 class NetPingRequestPacket(ServerPacket):
@@ -403,6 +457,216 @@ class ShortCutRegisterPacket(ServerPacket):
             self._reader.read_int32()  # characterType
 
 
+_ITEM_RECORD_FIXED = 62  # см. docs/INVENTORY.md §On-wire item record.
+
+
+def _read_item_record(reader: PacketReader) -> dict:
+    """Читает одну запись item record (фиксированные 62 байта).
+
+    Поля по docs/INVENTORY.md §On-wire item record. Хвост `enchantOption[N]`
+    не парсится: `N` на проводе не передаётся, его знает только клиент по шаблону
+    item id.
+    """
+    return {
+        "object_id": reader.read_uint32(),
+        "item_id": reader.read_uint32(),
+        "location": reader.read_uint32(),
+        "count": reader.read_int64(),
+        "type2": reader.read_uint16(),
+        "custom_type1": reader.read_uint16(),
+        "equipped": reader.read_uint16(),
+        "body_part": reader.read_uint32(),
+        "enchant": reader.read_uint16(),
+        "custom_type2": reader.read_uint16(),
+        "augmentation_id": reader.read_uint32(),
+        "mana": reader.read_int32(),
+        "time": reader.read_int32(),
+        "attack_element_type": reader.read_int16(),
+        "attack_element_power": reader.read_uint16(),
+        "def_element": [reader.read_uint16() for _ in range(6)],
+    }
+
+
+class StatusUpdatePacket(ServerPacket):
+    """StatusUpdate (S→C, opcode 0x18).
+
+    Body: `i32 objectId`, `i32 count`, `count × (i32 attrId, i32 value)`.
+
+    Attr ids (L2JMobius `StatusUpdate.java`): LEVEL=1, EXP=2, STR=3, DEX=4, CON=5,
+    INT=6, WIT=7, MEN=8, CUR_HP=9, MAX_HP=10, CUR_MP=11, MAX_MP=12, SP=13,
+    CUR_LOAD=14, MAX_LOAD=15, P_ATK=17, ATK_SPD=18, P_DEF=19, EVASION=20,
+    ACCURACY=21, CRITICAL=22, M_ATK=23, CAST_SPD=24, M_DEF=25, PVP_FLAG=26,
+    KARMA=27, CUR_CP=33, MAX_CP=34.
+    """
+
+    opcode: ClassVar[int] = 0x18
+    __slots__ = ("object_id", "updates")
+
+    def __init__(self, data: bytes) -> None:
+        self.object_id: int = 0
+        self.updates: dict[int, int] = {}
+        super().__init__(data)
+
+    def _read(self) -> None:
+        try:
+            self.object_id = self._reader.read_int32()
+            count = self._reader.read_int32()
+            for _ in range(count):
+                if self._reader.remaining() < 8:
+                    break
+                attr_id = self._reader.read_int32()
+                value = self._reader.read_int32()
+                self.updates[attr_id] = value
+        except Exception:
+            pass
+
+
+class ItemListPacket(ServerPacket):
+    """ItemList (S→C, opcode 0x11) — полный снимок инвентаря.
+
+    Body: `u16 showWindow`, `u16 itemCount`, `itemCount × item_record`.
+    См. docs/INVENTORY.md §ItemList.
+    """
+
+    opcode: ClassVar[int] = 0x11
+    __slots__ = ("show_window", "items")
+
+    def __init__(self, data: bytes) -> None:
+        self.show_window: int = 0
+        self.items: list[dict] = []
+        super().__init__(data)
+
+    def _read(self) -> None:
+        try:
+            self.show_window = self._reader.read_uint16()
+            count = self._reader.read_uint16()
+            for _ in range(count):
+                if self._reader.remaining() < _ITEM_RECORD_FIXED:
+                    break
+                self.items.append(_read_item_record(self._reader))
+        except Exception:
+            pass
+
+
+class InventoryUpdatePacket(ServerPacket):
+    """InventoryUpdate (S→C, opcode 0x21) — инкрементальное изменение инвентаря.
+
+    Body: `u16 changeCount`, `changeCount × (u16 changeType, item_record)`.
+    changeType: 1=ADDED, 2=MODIFIED, 3=REMOVED.
+    """
+
+    opcode: ClassVar[int] = 0x21
+    __slots__ = ("changes",)
+
+    def __init__(self, data: bytes) -> None:
+        self.changes: list[tuple[int, dict]] = []
+        super().__init__(data)
+
+    def _read(self) -> None:
+        try:
+            count = self._reader.read_uint16()
+            for _ in range(count):
+                if self._reader.remaining() < 2 + _ITEM_RECORD_FIXED:
+                    break
+                change_type = self._reader.read_uint16()
+                record = _read_item_record(self._reader)
+                self.changes.append((change_type, record))
+        except Exception:
+            pass
+
+
+class SkillListPacket(ServerPacket):
+    """SkillList (S→C, opcode 0x5F на HighFive).
+
+    Body: `i32 count`, `count × (i32 passive, i32 level, i32 id, u8 disabled)`.
+    """
+
+    opcode: ClassVar[int] = 0x5F
+    __slots__ = ("skills",)
+
+    def __init__(self, data: bytes) -> None:
+        self.skills: list[dict] = []
+        super().__init__(data)
+
+    def _read(self) -> None:
+        try:
+            count = self._reader.read_int32()
+            for _ in range(count):
+                if self._reader.remaining() < 13:
+                    break
+                passive = self._reader.read_int32()
+                level = self._reader.read_int32()
+                sid = self._reader.read_int32()
+                disabled = self._reader.read_byte()
+                self.skills.append(
+                    {
+                        "id": sid,
+                        "level": level,
+                        "passive": bool(passive),
+                        "disabled": bool(disabled),
+                    }
+                )
+        except Exception:
+            pass
+
+
+class NpcInfoPacket(ServerPacket):
+    """NpcInfo (S→C, opcode 0x16): появление / обновление NPC в поле зрения.
+
+    Best-effort парсинг первых полей на HighFive / L2JMobius. Остальное
+    (строки имени/титула, atk/speed stats, баффы) не читается — для
+    таргетинга достаточно objectId + координат + флага attackable.
+
+    Body layout (первые 7 i32):
+        objectId
+        idTemplate + 1000000   -> template_id = value - 1000000
+        isAttackable           -> bool (0/1)
+        heading
+        x
+        y
+        z
+    """
+
+    opcode: ClassVar[int] = 0x16
+    __slots__ = ("object_id", "template_id", "attackable", "heading", "x", "y", "z")
+
+    def __init__(self, data: bytes) -> None:
+        self.object_id: int = 0
+        self.template_id: int = 0
+        self.attackable: bool = False
+        self.heading: int = 0
+        self.x: int = 0
+        self.y: int = 0
+        self.z: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        self.object_id = self._reader.read_int32()
+        self.template_id = self._reader.read_int32() - 1000000
+        self.attackable = self._reader.read_int32() != 0
+        self.heading = self._reader.read_int32()
+        self.x = self._reader.read_int32()
+        self.y = self._reader.read_int32()
+        self.z = self._reader.read_int32()
+
+
+class DeleteObjectPacket(ServerPacket):
+    """DeleteObject (S→C, opcode 0x08): объект покинул зону видимости / умер.
+
+    Body: i32 objectId, [i32 unknown].
+    """
+
+    opcode: ClassVar[int] = 0x08
+    __slots__ = ("object_id",)
+
+    def __init__(self, data: bytes) -> None:
+        self.object_id: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        self.object_id = self._reader.read_int32()
+
+
 __all__ = [
     "KeyPacket",
     "CharSelectionInfoPacket",
@@ -412,4 +676,10 @@ __all__ = [
     "MyTargetSelectedPacket",
     "ShortCutInitPacket",
     "ShortCutRegisterPacket",
+    "StatusUpdatePacket",
+    "ItemListPacket",
+    "InventoryUpdatePacket",
+    "SkillListPacket",
+    "NpcInfoPacket",
+    "DeleteObjectPacket",
 ]

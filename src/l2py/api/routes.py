@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Path, Request
 
 from l2py.api.schemas import (
+    ItemView,
     SendResult,
+    ShortcutView,
+    SkillView,
     StatusResponse,
     TargetIdResponse,
 )
@@ -68,6 +72,40 @@ async def get_status(request: Request) -> StatusResponse:
     session = state.session
     if session is None:
         return StatusResponse(connected=False)
+
+    inventory = [
+        ItemView(
+            object_id=it["object_id"],
+            item_id=it["item_id"],
+            count=it["count"],
+            location=it.get("location", 0),
+            equipped=bool(it.get("equipped", 0)),
+            body_part=it.get("body_part", 0),
+            enchant=it.get("enchant", 0),
+            type2=it.get("type2", 0),
+            augmentation_id=it.get("augmentation_id", 0),
+            mana=it.get("mana", -1),
+            time=it.get("time", -9999),
+            attack_element_type=it.get("attack_element_type", -2),
+            attack_element_power=it.get("attack_element_power", 0),
+            def_element=list(it.get("def_element") or []),
+        )
+        for it in state.inventory.values()
+    ]
+    skills = [
+        SkillView(
+            id=s["id"],
+            level=s["level"],
+            passive=s.get("passive", False),
+            disabled=s.get("disabled", False),
+        )
+        for s in state.skills
+    ]
+    shortcuts = [
+        ShortcutView(slot=slot, type=sc_type, id=sc_id, level=level)
+        for slot, (sc_type, sc_id, level) in state.shortcuts.items()
+    ]
+
     return StatusResponse(
         connected=True,
         char_name=session.character.name,
@@ -77,6 +115,11 @@ async def get_status(request: Request) -> StatusResponse:
         y=state.self_y if state.self_y is not None else session.character.y,
         z=state.self_z if state.self_z is not None else session.character.z,
         last_target_id=state.last_target_object_id,
+        user_info=state.last_user_info,
+        stats=dict(state.stats),
+        inventory=inventory,
+        skills=skills,
+        shortcuts=shortcuts,
     )
 
 
@@ -115,10 +158,49 @@ async def pick_up(request: Request, id: int = Path(..., description="objectId п
 @router.get(
     "/action/next-target",
     response_model=TargetIdResponse,
-    summary="Текущая цель: возвращает id цели",
+    summary="Выбрать ближайшего враждебного моба и вернуть его objectId",
 )
 async def next_target(request: Request) -> TargetIdResponse:
     state = _state(request)
+    session = _require_session(state)
+    sx, sy, sz = _origin(state)
+
+    candidates = [
+        npc for npc in state.visible_npcs.values()
+        if npc.attackable and npc.object_id != state.self_object_id
+    ]
+    if not candidates:
+        raise HTTPException(
+            status_code=409,
+            detail="no attackable NPCs in sight (NpcInfo кэш пуст)",
+        )
+
+    nearest = min(
+        candidates,
+        key=lambda n: (n.x - sx) ** 2 + (n.y - sy) ** 2 + (n.z - sz) ** 2,
+    )
+
+    state.target_confirm_expected_id = nearest.object_id
+    state.target_confirm_event.clear()
+
+    try:
+        await session.connection.send_packet(
+            ActionPacket(nearest.object_id, sx, sy, sz, action_id=0)
+        )
+    except ConnectionError as exc:
+        state.target_confirm_expected_id = None
+        raise HTTPException(status_code=502, detail=f"send failed: {exc}") from exc
+
+    try:
+        await asyncio.wait_for(state.target_confirm_event.wait(), timeout=1.5)
+    except TimeoutError as exc:
+        state.target_confirm_expected_id = None
+        raise HTTPException(
+            status_code=504,
+            detail="server did not confirm MyTargetSelected in 1.5s",
+        ) from exc
+
+    state.target_confirm_expected_id = None
     return TargetIdResponse(id=state.last_target_object_id)
 
 
