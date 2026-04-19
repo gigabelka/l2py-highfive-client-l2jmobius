@@ -9,6 +9,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from l2py.api.state import ApiState, GroundItemRecord, NpcRecord
 from l2py.events import PacketReceivedEvent
+from l2py.protocol.game.serializer import (
+    STATUS_UPDATE_TO_USER_INFO,
+    packet_to_envelope,
+    serialize_user_info,
+)
 from l2py.protocol.game.server_packets import (
     DeleteObjectPacket,
     DropItemPacket,
@@ -33,12 +38,7 @@ async def _broadcast(state: ApiState, event: PacketReceivedEvent) -> None:
     """Рассылает событие всем подключённым WS-клиентам, дропает медленных."""
     if not state.ws_clients:
         return
-    payload = {
-        "opcode": f"0x{event.opcode:02X}",
-        "hex": event.data.hex(),
-        "len": len(event.data),
-        "source": event.source,
-    }
+    payload = packet_to_envelope(event.opcode, event.data, event.source)
     dead: list[WebSocket] = []
     for ws in list(state.ws_clients):
         try:
@@ -48,58 +48,6 @@ async def _broadcast(state: ApiState, event: PacketReceivedEvent) -> None:
             dead.append(ws)
     for ws in dead:
         state.ws_clients.discard(ws)
-
-
-def _userinfo_snapshot(pkt: UserInfoPacket) -> dict:
-    """Формирует dict-снимок всех распарсенных полей UserInfo."""
-    return {
-        "object_id": pkt.object_id,
-        "name": pkt.name,
-        "x": pkt.x,
-        "y": pkt.y,
-        "z": pkt.z,
-        "heading": pkt.heading,
-        "race": pkt.race,
-        "sex": pkt.sex,
-        "class_id": pkt.class_id,
-        "level": pkt.level,
-        "exp": pkt.exp,
-        "str": pkt.str_,
-        "dex": pkt.dex,
-        "con": pkt.con,
-        "int": pkt.int_,
-        "wit": pkt.wit,
-        "men": pkt.men,
-        "max_hp": pkt.max_hp,
-        "cur_hp": pkt.cur_hp,
-        "max_mp": pkt.max_mp,
-        "cur_mp": pkt.cur_mp,
-        "sp": pkt.sp,
-        "cur_load": pkt.cur_load,
-        "max_load": pkt.max_load,
-        "active_weapon_item": pkt.active_weapon_item,
-    }
-
-
-# Соответствие attr_id из StatusUpdate и полей last_user_info (docs: L2JMobius
-# StatusUpdate.java). Используется для апдейта снимка при StatusUpdate на self.
-_STATUS_UPDATE_TO_USER_INFO: dict[int, str] = {
-    1: "level",
-    2: "exp",
-    3: "str",
-    4: "dex",
-    5: "con",
-    6: "int",
-    7: "wit",
-    8: "men",
-    9: "cur_hp",
-    10: "max_hp",
-    11: "cur_mp",
-    12: "max_mp",
-    13: "sp",
-    14: "cur_load",
-    15: "max_load",
-}
 
 
 def _track_self_and_target(state: ApiState, event: PacketReceivedEvent) -> None:
@@ -116,14 +64,14 @@ def _track_self_and_target(state: ApiState, event: PacketReceivedEvent) -> None:
                 state.self_x = pkt.character.x
                 state.self_y = pkt.character.y
                 state.self_z = pkt.character.z
-            state.last_user_info = _userinfo_snapshot(pkt)
+            state.last_user_info = serialize_user_info(pkt)
         elif event.opcode == StatusUpdatePacket.opcode:
             su_pkt = StatusUpdatePacket(event.data)
             if state.self_object_id is None or su_pkt.object_id == state.self_object_id:
                 state.stats.update(su_pkt.updates)
                 if state.last_user_info is not None:
                     for attr_id, value in su_pkt.updates.items():
-                        key = _STATUS_UPDATE_TO_USER_INFO.get(attr_id)
+                        key = STATUS_UPDATE_TO_USER_INFO.get(attr_id)
                         if key is not None:
                             state.last_user_info[key] = value
         elif event.opcode == ItemListPacket.opcode:
