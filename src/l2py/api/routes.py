@@ -7,12 +7,9 @@ import logging
 from fastapi import APIRouter, HTTPException, Path, Request
 
 from l2py.api.schemas import (
-    AttackBody,
-    ObjectIdBody,
     SendResult,
-    ShortcutBody,
-    SitStandRequest,
     StatusResponse,
+    TargetIdResponse,
 )
 from l2py.api.state import ApiState
 from l2py.protocol.base import ClientPacket
@@ -83,72 +80,78 @@ async def get_status(request: Request) -> StatusResponse:
     )
 
 
-@router.post(
+@router.get(
     "/action/sit-stand",
     response_model=SendResult,
-    summary="Sit / Stand (RequestActionUse action_id=0)",
+    summary="Сидеть / Стоять",
 )
-async def sit_stand(body: SitStandRequest, request: Request) -> SendResult:
+async def sit_stand(request: Request) -> SendResult:
     state = _state(request)
-    return await _send(state, RequestActionUsePacket(0, ctrl=body.ctrl, shift=body.shift))
+    return await _send(state, RequestActionUsePacket(0))
 
 
-@router.post(
-    "/action/attack",
+@router.get(
+    "/action/attack/{id}",
     response_model=SendResult,
-    summary="Attack (AttackRequest 0x32)",
+    summary="Текущая цель: принимает только id цели",
 )
-async def attack(body: AttackBody, request: Request) -> SendResult:
+async def attack(request: Request, id: int = Path(..., description="objectId цели")) -> SendResult:
     state = _state(request)
     x, y, z = _origin(state)
-    return await _send(
-        state,
-        AttackRequestPacket(body.object_id, x, y, z, attack_id=1 if body.shift else 0),
-    )
+    return await _send(state, AttackRequestPacket(id, x, y, z, attack_id=0))
 
 
-@router.post(
-    "/action/pick-up",
+@router.get(
+    "/action/pick-up/{id}",
     response_model=SendResult,
-    summary="Pick Up (Action 0x1F на objectId предмета)",
+    summary="Поднять предмет: принимает только id предмета",
 )
-async def pick_up(body: ObjectIdBody, request: Request) -> SendResult:
+async def pick_up(request: Request, id: int = Path(..., description="objectId предмета на земле")) -> SendResult:
     state = _state(request)
     x, y, z = _origin(state)
-    return await _send(state, ActionPacket(body.object_id, x, y, z, action_id=0))
+    return await _send(state, ActionPacket(id, x, y, z, action_id=0))
 
 
-@router.post(
+@router.get(
     "/action/next-target",
-    response_model=SendResult,
-    summary="Next Target — шлёт Action 0x1F на указанный objectId (цикл целей — на стороне вызывающего)",
+    response_model=TargetIdResponse,
+    summary="Текущая цель: возвращает id цели",
 )
-async def next_target(body: ObjectIdBody, request: Request) -> SendResult:
+async def next_target(request: Request) -> TargetIdResponse:
     state = _state(request)
-    x, y, z = _origin(state)
-    return await _send(state, ActionPacket(body.object_id, x, y, z, action_id=0))
+    return TargetIdResponse(id=state.last_target_object_id)
 
 
-@router.post(
+@router.get(
     "/key/f{slot}",
     response_model=SendResult,
-    summary="F1–F12: диспатч по type (ACTION/SKILL/ITEM)",
+    summary="F1–F12 функциональнык клавиши",
 )
 async def press_fkey(
-    body: ShortcutBody,
     request: Request,
     slot: int = Path(..., ge=1, le=12),
 ) -> SendResult:
     state = _state(request)
-    if body.type == "ACTION":
-        packet: ClientPacket = RequestActionUsePacket(body.id, ctrl=body.ctrl, shift=body.shift)
-    elif body.type == "SKILL":
-        packet = RequestMagicSkillUsePacket(body.id, ctrl=body.ctrl, shift=body.shift)
-    elif body.type == "ITEM":
-        packet = UseItemPacket(body.id, ctrl=body.ctrl)
-    else:  # pragma: no cover - защищено Literal
-        raise HTTPException(status_code=400, detail=f"Unsupported shortcut type: {body.type}")
-    logger.debug("F%d dispatch: type=%s id=%d", slot, body.type, body.id)
+    encoded_slot = slot - 1  # page 0
+    entry = state.shortcuts.get(encoded_slot)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"F{slot}: слот action-bar пуст или ShortCutInit ещё не получен",
+        )
+    sc_type, sc_id, level = entry
+    if sc_type == 3:  # ACTION
+        packet: ClientPacket = RequestActionUsePacket(sc_id)
+    elif sc_type == 2:  # SKILL
+        packet = RequestMagicSkillUsePacket(sc_id)
+    elif sc_type == 1:  # ITEM
+        packet = UseItemPacket(sc_id)
+    else:
+        raise HTTPException(
+            status_code=409,
+            detail=f"F{slot}: тип шортката {sc_type} не поддерживается (MACRO/RECIPE/BOOKMARK)",
+        )
+    logger.debug("F%d dispatch: type=%d id=%d level=%d", slot, sc_type, sc_id, level)
     return await _send(state, packet)
 
 

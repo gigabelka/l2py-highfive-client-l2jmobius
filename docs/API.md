@@ -13,11 +13,11 @@
 | Метод  | Путь                      | Тело                                                                    | Что делает                                                                                                                       |
 | ------ | ------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`  | `/api/status`             | —                                                                       | Возвращает состояние: имя, objectId, координаты, последнюю выбранную цель                                                        |
-| `POST` | `/api/action/sit-stand`   | `{ctrl?: bool, shift?: bool}`                                           | `RequestActionUse 0x56` с `action_id=0` — сесть/встать                                                                           |
-| `POST` | `/api/action/attack`      | `{object_id: int, shift?: bool}`                                        | `AttackRequest 0x32` по цели (origin берётся из трекнутой позиции персонажа)                                                     |
-| `POST` | `/api/action/pick-up`     | `{object_id: int}`                                                      | `Action 0x1F` на предмет на земле                                                                                                |
-| `POST` | `/api/action/next-target` | `{object_id: int}`                                                      | `Action 0x1F` на заданный objectId. Выбор «следующей» цели — клиентская логика, вызывающий сам определяет её                     |
-| `POST` | `/api/key/f{N}` (N=1..12) | `{type: "ACTION"\|"SKILL"\|"ITEM", id: int, ctrl?: bool, shift?: bool}` | MVP: вызывающий задаёт биндинг F-клавиши. ACTION→`RequestActionUse 0x56`, SKILL→`RequestMagicSkillUse 0x39`, ITEM→`UseItem 0x19` |
+| `GET`  | `/api/action/sit-stand`   | —                                                                       | `RequestActionUse 0x56` с `action_id=0` — сесть/встать                                                                           |
+| `GET`  | `/api/action/attack/{id}` | —                                                                       | `AttackRequest 0x32` по `id` (origin берётся из трекнутой позиции персонажа)                                                     |
+| `GET`  | `/api/action/pick-up/{id}`| —                                                                       | `Action 0x1F` на предмет на земле с objectId `id`                                                                                |
+| `GET`  | `/api/action/next-target` | —                                                                       | Возвращает `{id: int\|null}` — текущий `last_target_object_id` из state; пакеты не отправляются                                  |
+| `GET`  | `/api/key/f{N}` (N=1..12) | —                                                                       | Резолвит слот `N-1` action-bar (page 0) по `ShortCutInit 0x45` / `ShortCutRegister 0x44` и шлёт соответствующий пакет: ACTION→`0x56`, SKILL→`0x39`, ITEM→`0x19`. `404`, если слот пуст |
 | `WS`   | `/ws/packets`             | —                                                                       | Стрим входящих игровых пакетов                                                                                                   |
 
 ## Примеры
@@ -26,6 +26,6 @@
 
 ## Ограничения MVP
 
-- `Next Target`: логика перебора целей на стороне вызывающего — эндпоинт принимает готовый `object_id`.
-- `F1–F12`: автоматическое разрешение shortcut bar (серверные `ShortcutInit`/`ShortcutRegister`) ещё не реализовано; биндинг передаётся в теле запроса.
+- `Next Target`: возвращает только последний выбранный `objectId` (из `MyTargetSelected`); цикл целей и отправка `Action 0x1F` — на стороне вызывающего.
+- `F1–F12`: раскладка action-bar читается из серверных `ShortCutInit 0x45` / `ShortCutRegister 0x44` (page 0, slot = N−1). Поддерживаются типы ACTION/SKILL/ITEM; MACRO/RECIPE/BOOKMARK возвращают `409`.
 - `Attack` / `Pick Up` требуют, чтобы клиент уже получил хотя бы один `UserInfo` (позиция персонажа закэширована) — иначе вернётся `409`.

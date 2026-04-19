@@ -351,6 +351,58 @@ class MyTargetSelectedPacket(ServerPacket):
             self.color_distance = self._reader.read_int32()
 
 
+class ShortCutInitPacket(ServerPacket):
+    """ShortCutInit (S→C, opcode 0x45): начальная раскладка action-bar.
+
+    Body: `i32 count` + `count` записей по 5×i32: `type, slot, id, level, characterType`.
+    `slot` закодирован как `slot + page*12` (0..119). См. docs/ACTIONS.md §10.4.
+    """
+
+    opcode: ClassVar[int] = 0x45
+    __slots__ = ("entries",)
+
+    def __init__(self, data: bytes) -> None:
+        self.entries: list[tuple[int, int, int, int]] = []
+        super().__init__(data)
+
+    def _read(self) -> None:
+        count = self._reader.read_int32()
+        for _ in range(count):
+            if self._reader.remaining() < 20:
+                break
+            sc_type = self._reader.read_int32()
+            slot = self._reader.read_int32()
+            sc_id = self._reader.read_int32()
+            level = self._reader.read_int32()
+            self._reader.read_int32()  # characterType
+            self.entries.append((sc_type, slot, sc_id, level))
+
+
+class ShortCutRegisterPacket(ServerPacket):
+    """ShortCutRegister (S→C, opcode 0x44): одна запись action-bar.
+
+    Body: `type, slot, id, level, characterType` — 5×i32. См. docs/ACTIONS.md §10.2.
+    """
+
+    opcode: ClassVar[int] = 0x44
+    __slots__ = ("type", "slot", "id", "level")
+
+    def __init__(self, data: bytes) -> None:
+        self.type: int = 0
+        self.slot: int = 0
+        self.id: int = 0
+        self.level: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        self.type = self._reader.read_int32()
+        self.slot = self._reader.read_int32()
+        self.id = self._reader.read_int32()
+        self.level = self._reader.read_int32()
+        if self._reader.remaining() >= 4:
+            self._reader.read_int32()  # characterType
+
+
 __all__ = [
     "KeyPacket",
     "CharSelectionInfoPacket",
@@ -358,4 +410,6 @@ __all__ = [
     "UserInfoPacket",
     "NetPingRequestPacket",
     "MyTargetSelectedPacket",
+    "ShortCutInitPacket",
+    "ShortCutRegisterPacket",
 ]

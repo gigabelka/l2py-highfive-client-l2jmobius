@@ -31,6 +31,10 @@ class ApiState:
     self_z: int | None = None
     last_target_object_id: int | None = None
 
+    # Карта action-bar: encoded_slot (slot + page*12) -> (type, id, level).
+    # type: 1=ITEM, 2=SKILL, 3=ACTION, 4=MACRO, 5=RECIPE, 6=BOOKMARK.
+    shortcuts: dict[int, tuple[int, int, int]] = field(default_factory=dict)
+
     ws_clients: set["WebSocket"] = field(default_factory=set)
 
     def self_position(self) -> tuple[int, int, int] | None:

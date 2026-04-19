@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
 from l2py.api import ws as ws_module
 from l2py.api.routes import router as http_router
@@ -35,6 +35,11 @@ def create_app(state: ApiState) -> FastAPI:
     app.include_router(http_router)
     app.include_router(ws_router)
     ws_module.register_subscribers(state)
+
+    @app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
+    async def _chrome_devtools_probe() -> Response:
+        return Response(status_code=204)
+
     return app
 
 

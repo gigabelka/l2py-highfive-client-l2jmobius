@@ -28,15 +28,13 @@ if __name__ == "__main__":
 
 ```bash
 # Сесть / встать
-curl -X POST http://127.0.0.1:8000/api/action/sit-stand -H "Content-Type: application/json" -d '{}'
+curl http://127.0.0.1:8000/api/action/sit-stand
 
 # Атака по objectId 268440938
-curl -X POST http://127.0.0.1:8000/api/action/attack -H "Content-Type: application/json" \
-     -d '{"object_id": 268440938}'
+curl http://127.0.0.1:8000/api/action/attack/268440938
 
-# F1 → ACTION с action_id=1000 (призыв слуги)
-curl -X POST http://127.0.0.1:8000/api/key/f1 -H "Content-Type: application/json" \
-     -d '{"type": "ACTION", "id": 1000}'
+# F1 — шлёт пакет, соответствующий слоту 0 action-bar (page 0), как в клиенте
+curl http://127.0.0.1:8000/api/key/f1
 
 # Подписка на стрим пакетов
 websocat ws://127.0.0.1:8000/ws/packets

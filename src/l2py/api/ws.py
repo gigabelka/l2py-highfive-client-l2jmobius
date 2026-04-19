@@ -11,6 +11,8 @@ from l2py.api.state import ApiState
 from l2py.events import PacketReceivedEvent
 from l2py.protocol.game.server_packets import (
     MyTargetSelectedPacket,
+    ShortCutInitPacket,
+    ShortCutRegisterPacket,
     UserInfoPacket,
 )
 
@@ -53,6 +55,18 @@ def _track_self_and_target(state: ApiState, event: PacketReceivedEvent) -> None:
         elif event.opcode == MyTargetSelectedPacket.opcode:
             pkt = MyTargetSelectedPacket(event.data)
             state.last_target_object_id = pkt.object_id
+        elif event.opcode == ShortCutInitPacket.opcode:
+            init_pkt = ShortCutInitPacket(event.data)
+            state.shortcuts = {
+                slot: (sc_type, sc_id, level)
+                for (sc_type, slot, sc_id, level) in init_pkt.entries
+            }
+        elif event.opcode == ShortCutRegisterPacket.opcode:
+            reg_pkt = ShortCutRegisterPacket(event.data)
+            if reg_pkt.type == 0:
+                state.shortcuts.pop(reg_pkt.slot, None)
+            else:
+                state.shortcuts[reg_pkt.slot] = (reg_pkt.type, reg_pkt.id, reg_pkt.level)
     except Exception:
         logger.debug("Failed to parse tracking packet 0x%02X", event.opcode, exc_info=True)
 
