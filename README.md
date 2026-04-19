@@ -50,6 +50,12 @@ python main.py
 L2PY_API_HOST=0.0.0.0 L2PY_API_PORT=8080 python main.py
 ```
 
+# Прсмотреть пакеты по ws в консоли Браузера
+
+new WebSocket("ws://127.0.0.1:8000/ws/packets").onmessage = e => console.log(JSON.parse(e.data));
+
+Распарсенные снимки (инвентарь, статы, цель, видимые NPC/предметы) не идут в WS — они доступны как HTTP GET на /api/... (см. routes.py и docs/API.md). WS отдаёт только сырые пакеты hex.
+
 ## Тесты и линт
 
 ```bash
