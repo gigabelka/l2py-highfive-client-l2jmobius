@@ -32,6 +32,18 @@ class NpcRecord:
 
 
 @dataclass
+class GroundItemRecord:
+    """Кэш одного видимого предмета на земле (из SpawnItem 0x05 / DropItem 0x16)."""
+
+    object_id: int
+    item_id: int
+    x: int
+    y: int
+    z: int
+    count: int
+
+
+@dataclass
 class ApiState:
     """Mutable runtime state shared across API handlers."""
 
@@ -50,6 +62,9 @@ class ApiState:
 
     # Видимые NPC: object_id -> NpcRecord. Обновляется из NpcInfo/DeleteObject.
     visible_npcs: dict[int, NpcRecord] = field(default_factory=dict)
+    # Видимые ground-предметы: object_id -> GroundItemRecord.
+    # Обновляется из SpawnItem 0x05 / DropItem 0x16 / DeleteObject 0x08.
+    visible_items: dict[int, GroundItemRecord] = field(default_factory=dict)
 
     # Снимок последнего UserInfo (все распарсенные поля).
     last_user_info: dict[str, Any] | None = None
@@ -77,4 +92,4 @@ class ApiState:
         return (self.self_x, self.self_y, self.self_z)
 
 
-__all__ = ["ApiState", "NpcRecord"]
+__all__ = ["ApiState", "GroundItemRecord", "NpcRecord"]

@@ -144,14 +144,25 @@ async def attack(request: Request, id: int = Path(..., description="objectId ц�
 
 
 @router.get(
-    "/action/pick-up/{id}",
+    "/action/pick-up",
     response_model=SendResult,
-    summary="Поднять предмет: принимает только id предмета",
+    summary="Поднять ближайший предмет с земли",
 )
-async def pick_up(request: Request, id: int = Path(..., description="objectId предмета на земле")) -> SendResult:
+async def pick_up(request: Request) -> SendResult:
+    """Находит ближайший видимый ground item из кэша SpawnItem/DropItem
+    и отправляет `Action 0x1F` на него. 409, если кэш пуст."""
     state = _state(request)
-    x, y, z = _origin(state)
-    return await _send(state, ActionPacket(id, x, y, z, action_id=0))
+    sx, sy, sz = _origin(state)
+    if not state.visible_items:
+        raise HTTPException(
+            status_code=409,
+            detail="no ground items in sight (SpawnItem/DropItem кэш пуст)",
+        )
+    nearest = min(
+        state.visible_items.values(),
+        key=lambda it: (it.x - sx) ** 2 + (it.y - sy) ** 2 + (it.z - sz) ** 2,
+    )
+    return await _send(state, ActionPacket(nearest.object_id, sx, sy, sz, action_id=0))
 
 
 @router.get(

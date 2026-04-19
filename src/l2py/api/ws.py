@@ -7,10 +7,11 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from l2py.api.state import ApiState, NpcRecord
+from l2py.api.state import ApiState, GroundItemRecord, NpcRecord
 from l2py.events import PacketReceivedEvent
 from l2py.protocol.game.server_packets import (
     DeleteObjectPacket,
+    DropItemPacket,
     InventoryUpdatePacket,
     ItemListPacket,
     MyTargetSelectedPacket,
@@ -18,6 +19,7 @@ from l2py.protocol.game.server_packets import (
     ShortCutInitPacket,
     ShortCutRegisterPacket,
     SkillListPacket,
+    SpawnItemPacket,
     StatusUpdatePacket,
     UserInfoPacket,
 )
@@ -153,9 +155,30 @@ def _track_self_and_target(state: ApiState, event: PacketReceivedEvent) -> None:
                 z=npc_pkt.z,
                 attackable=npc_pkt.attackable,
             )
+        elif event.opcode == SpawnItemPacket.opcode:
+            si_pkt = SpawnItemPacket(event.data)
+            state.visible_items[si_pkt.object_id] = GroundItemRecord(
+                object_id=si_pkt.object_id,
+                item_id=si_pkt.item_id,
+                x=si_pkt.x,
+                y=si_pkt.y,
+                z=si_pkt.z,
+                count=si_pkt.count,
+            )
+        elif event.opcode == DropItemPacket.opcode:
+            di_pkt = DropItemPacket(event.data)
+            state.visible_items[di_pkt.object_id] = GroundItemRecord(
+                object_id=di_pkt.object_id,
+                item_id=di_pkt.item_id,
+                x=di_pkt.x,
+                y=di_pkt.y,
+                z=di_pkt.z,
+                count=di_pkt.count,
+            )
         elif event.opcode == DeleteObjectPacket.opcode:
             del_pkt = DeleteObjectPacket(event.data)
             state.visible_npcs.pop(del_pkt.object_id, None)
+            state.visible_items.pop(del_pkt.object_id, None)
             if state.last_target_object_id == del_pkt.object_id:
                 state.last_target_object_id = None
         elif event.opcode == ShortCutInitPacket.opcode:

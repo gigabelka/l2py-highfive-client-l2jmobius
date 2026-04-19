@@ -682,6 +682,90 @@ class NpcInfoPacket(ServerPacket):
         self.heading = self._reader.read_int32()
 
 
+class SpawnItemPacket(ServerPacket):
+    """SpawnItem (S→C, opcode 0x05): предмет уже лежит на земле в зоне видимости.
+
+    L2JMobius HighFive `SpawnItem.java`:
+        writeC(0x05);
+        writeD(objectId);
+        writeD(itemId);
+        writeD(x); writeD(y); writeD(z);
+        writeD(stackable ? 1 : 0);
+        writeQ(count);
+        writeD(0);  // unknown
+    """
+
+    opcode: ClassVar[int] = 0x05
+    __slots__ = ("object_id", "item_id", "x", "y", "z", "stackable", "count")
+
+    def __init__(self, data: bytes) -> None:
+        self.object_id: int = 0
+        self.item_id: int = 0
+        self.x: int = 0
+        self.y: int = 0
+        self.z: int = 0
+        self.stackable: bool = False
+        self.count: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        self.object_id = self._reader.read_int32()
+        self.item_id = self._reader.read_int32()
+        self.x = self._reader.read_int32()
+        self.y = self._reader.read_int32()
+        self.z = self._reader.read_int32()
+        self.stackable = self._reader.read_int32() != 0
+        self.count = self._reader.read_int64()
+
+
+class DropItemPacket(ServerPacket):
+    """DropItem (S→C, opcode 0x16): кто-то выбросил / сдропнул предмет.
+
+    L2JMobius HighFive `DropItem.java`:
+        writeC(0x16);
+        writeD(dropperObjectId);
+        writeD(objectId);
+        writeD(itemId);
+        writeD(x); writeD(y); writeD(z);
+        writeD(stackable ? 1 : 0);
+        writeQ(count);
+        writeD(0);  // unknown
+    """
+
+    opcode: ClassVar[int] = 0x16
+    __slots__ = (
+        "dropper_object_id",
+        "object_id",
+        "item_id",
+        "x",
+        "y",
+        "z",
+        "stackable",
+        "count",
+    )
+
+    def __init__(self, data: bytes) -> None:
+        self.dropper_object_id: int = 0
+        self.object_id: int = 0
+        self.item_id: int = 0
+        self.x: int = 0
+        self.y: int = 0
+        self.z: int = 0
+        self.stackable: bool = False
+        self.count: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        self.dropper_object_id = self._reader.read_int32()
+        self.object_id = self._reader.read_int32()
+        self.item_id = self._reader.read_int32()
+        self.x = self._reader.read_int32()
+        self.y = self._reader.read_int32()
+        self.z = self._reader.read_int32()
+        self.stackable = self._reader.read_int32() != 0
+        self.count = self._reader.read_int64()
+
+
 class DeleteObjectPacket(ServerPacket):
     """DeleteObject (S→C, opcode 0x08): объект покинул зону видимости / умер.
 
@@ -713,5 +797,7 @@ __all__ = [
     "InventoryUpdatePacket",
     "SkillListPacket",
     "NpcInfoPacket",
+    "SpawnItemPacket",
+    "DropItemPacket",
     "DeleteObjectPacket",
 ]
