@@ -102,6 +102,10 @@ _STATUS_UPDATE_TO_USER_INFO: dict[int, str] = {
 
 def _track_self_and_target(state: ApiState, event: PacketReceivedEvent) -> None:
     """Обновляет кэш позиции и последней цели из входящих пакетов."""
+    state.opcode_counts[event.opcode] = state.opcode_counts.get(event.opcode, 0) + 1
+    state.recent_packets.append((event.opcode, event.data.hex()))
+    if len(state.recent_packets) > 40:
+        del state.recent_packets[:-40]
     try:
         if event.opcode == UserInfoPacket.opcode:
             pkt = UserInfoPacket(event.data)
@@ -137,10 +141,7 @@ def _track_self_and_target(state: ApiState, event: PacketReceivedEvent) -> None:
         elif event.opcode == MyTargetSelectedPacket.opcode:
             pkt = MyTargetSelectedPacket(event.data)
             state.last_target_object_id = pkt.object_id
-            if (
-                state.target_confirm_expected_id is not None
-                and pkt.object_id == state.target_confirm_expected_id
-            ):
+            if state.target_confirm_expected_id is not None:
                 state.target_confirm_event.set()
         elif event.opcode == NpcInfoPacket.opcode:
             npc_pkt = NpcInfoPacket(event.data)

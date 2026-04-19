@@ -64,6 +64,11 @@ class ApiState:
     target_confirm_event: asyncio.Event = field(default_factory=asyncio.Event)
     target_confirm_expected_id: int | None = None
 
+    # Диагностика: количество раз, что клиент видел каждый opcode (debug).
+    opcode_counts: dict[int, int] = field(default_factory=dict)
+    # Последние 20 пакетов (opcode, hex-body) для диагностики.
+    recent_packets: list[tuple[int, str]] = field(default_factory=list)
+
     ws_clients: set["WebSocket"] = field(default_factory=set)
 
     def self_position(self) -> tuple[int, int, int] | None:

@@ -386,12 +386,14 @@ class NetPingRequestPacket(ServerPacket):
 
 
 class MyTargetSelectedPacket(ServerPacket):
-    """MyTargetSelected (S→C, opcode 0xA6): подтверждение выбора цели.
+    """MyTargetSelected (S→C, opcode 0xB9 на L2JMobius HighFive).
 
-    Body: i32 object_id, i32 color_distance. См. docs/ACTIONS.md §1.
+    На L2JMobius HighFive сервер шлёт подтверждение выбора цели с опкодом
+    0xB9 (а не 0xA6, как в «каноническом» HighFive-протоколе / docs/ACTIONS.md §1).
+    Body: i32 object_id, i32 color_distance, [u16 tail].
     """
 
-    opcode: ClassVar[int] = 0xA6
+    opcode: ClassVar[int] = 0xB9
     __slots__ = ("object_id", "color_distance")
 
     def __init__(self, data: bytes) -> None:
@@ -611,43 +613,42 @@ class SkillListPacket(ServerPacket):
 
 
 class NpcInfoPacket(ServerPacket):
-    """NpcInfo (S→C, opcode 0x16): появление / обновление NPC в поле зрения.
+    """NpcInfo (S→C, opcode 0x0C): появление / обновление NPC в поле зрения.
 
-    Best-effort парсинг первых полей на HighFive / L2JMobius. Остальное
-    (строки имени/титула, atk/speed stats, баффы) не читается — для
-    таргетинга достаточно objectId + координат + флага attackable.
+    Best-effort парсинг первых полей L2JMobius HighFive `NpcInfo.java`:
+        writeC(0x0C);
+        writeD(objectId);
+        writeD(displayId + 1000000);
+        writeD(isAutoAttackable ? 1 : 0);
+        writeD(x); writeD(y); writeD(z);
+        writeD(heading);
+        ...
 
-    Body layout (первые 7 i32):
-        objectId
-        idTemplate + 1000000   -> template_id = value - 1000000
-        isAttackable           -> bool (0/1)
-        heading
-        x
-        y
-        z
+    Остальное (stats, строки, баффы, appearance) не читается —
+    для таргетинга достаточно objectId + координат + флага attackable.
     """
 
-    opcode: ClassVar[int] = 0x16
-    __slots__ = ("object_id", "template_id", "attackable", "heading", "x", "y", "z")
+    opcode: ClassVar[int] = 0x0C
+    __slots__ = ("object_id", "template_id", "attackable", "x", "y", "z", "heading")
 
     def __init__(self, data: bytes) -> None:
         self.object_id: int = 0
         self.template_id: int = 0
         self.attackable: bool = False
-        self.heading: int = 0
         self.x: int = 0
         self.y: int = 0
         self.z: int = 0
+        self.heading: int = 0
         super().__init__(data)
 
     def _read(self) -> None:
         self.object_id = self._reader.read_int32()
         self.template_id = self._reader.read_int32() - 1000000
         self.attackable = self._reader.read_int32() != 0
-        self.heading = self._reader.read_int32()
         self.x = self._reader.read_int32()
         self.y = self._reader.read_int32()
         self.z = self._reader.read_int32()
+        self.heading = self._reader.read_int32()
 
 
 class DeleteObjectPacket(ServerPacket):

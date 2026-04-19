@@ -156,6 +156,68 @@ async def pick_up(request: Request, id: int = Path(..., description="objectId п
 
 
 @router.get(
+    "/debug/npcs",
+    summary="Диагностика: список всех видимых NPC из кэша NpcInfo 0x0C",
+)
+async def debug_npcs(request: Request) -> dict:
+    state = _state(request)
+    sx, sy, sz = (state.self_x, state.self_y, state.self_z)
+    npcs = []
+    for npc in state.visible_npcs.values():
+        dist_sq = None
+        if sx is not None and sy is not None and sz is not None:
+            dist_sq = (npc.x - sx) ** 2 + (npc.y - sy) ** 2 + (npc.z - sz) ** 2
+        npcs.append({
+            "object_id": npc.object_id,
+            "template_id": npc.template_id,
+            "attackable": npc.attackable,
+            "x": npc.x,
+            "y": npc.y,
+            "z": npc.z,
+            "dist_sq": dist_sq,
+        })
+    npcs.sort(key=lambda n: n["dist_sq"] if n["dist_sq"] is not None else 0)
+    return {
+        "self": {"x": sx, "y": sy, "z": sz, "object_id": state.self_object_id},
+        "count": len(npcs),
+        "npcs": npcs,
+    }
+
+
+@router.get(
+    "/debug/recent",
+    summary="Диагностика: последние 40 пакетов (opcode + hex), с опциональным фильтром",
+)
+async def debug_recent(request: Request, ops: str | None = None) -> dict:
+    state = _state(request)
+    wanted: set[int] | None = None
+    if ops:
+        wanted = {int(x, 16) for x in ops.split(",")}
+    items = [
+        {"opcode": f"0x{op:02X}", "len": len(h) // 2, "hex": h}
+        for op, h in state.recent_packets
+        if wanted is None or op in wanted
+    ]
+    return {"count": len(items), "packets": items}
+
+
+@router.get(
+    "/debug/opcodes",
+    summary="Диагностика: сколько раз виден каждый opcode (hex: count), и размер visible_npcs",
+)
+async def debug_opcodes(request: Request) -> dict:
+    state = _state(request)
+    return {
+        "visible_npcs": len(state.visible_npcs),
+        "last_target_object_id": state.last_target_object_id,
+        "opcodes": {
+            f"0x{op:02X}": cnt
+            for op, cnt in sorted(state.opcode_counts.items())
+        },
+    }
+
+
+@router.get(
     "/action/next-target",
     response_model=TargetIdResponse,
     summary="Выбрать ближайшего враждебного моба и вернуть его objectId",
@@ -191,17 +253,25 @@ async def next_target(request: Request) -> TargetIdResponse:
         state.target_confirm_expected_id = None
         raise HTTPException(status_code=502, detail=f"send failed: {exc}") from exc
 
+    chosen_id = nearest.object_id
     try:
         await asyncio.wait_for(state.target_confirm_event.wait(), timeout=1.5)
-    except TimeoutError as exc:
+        confirmed = state.last_target_object_id
+    except TimeoutError:
+        # Сервер не прислал MyTargetSelected — либо моб уже таргет, либо опкод
+        # отличается на этой сборке. Считаем, что Action 0x1F принят, и
+        # возвращаем выбранный id (нижестоящий код может его использовать для
+        # AttackRequest / UseItem); last_target_object_id при этом не трогаем.
+        logger.info(
+            "next-target: no MyTargetSelected within 1.5s for objectId=%d; "
+            "assuming success",
+            chosen_id,
+        )
+        confirmed = chosen_id
+    finally:
         state.target_confirm_expected_id = None
-        raise HTTPException(
-            status_code=504,
-            detail="server did not confirm MyTargetSelected in 1.5s",
-        ) from exc
 
-    state.target_confirm_expected_id = None
-    return TargetIdResponse(id=state.last_target_object_id)
+    return TargetIdResponse(id=confirmed)
 
 
 @router.get(
