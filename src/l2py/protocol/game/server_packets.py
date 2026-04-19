@@ -407,11 +407,46 @@ class MyTargetSelectedPacket(ServerPacket):
             self.color_distance = self._reader.read_int32()
 
 
+def _read_shortcut_body(reader: PacketReader, sc_type: int) -> tuple[int, int]:
+    """Читает per-type тело одной записи action-bar, возвращает (id, level).
+
+    Layout взят из L2JMobius `ShortcutInit.writeImpl` / `ShortcutRegister`
+    (CT 2.6 HighFive). Вне type+slot заголовка:
+
+    - ITEM (1):   id i32, 1 i32, sharedReuseGroup i32, 0 i32, 0 i32, 0 i16, 0 i16
+    - SKILL (2):  id i32, level i32, 0 u8 (C5 pad), 1 i32 (C6)
+    - ACTION/MACRO/RECIPE/BOOKMARK (3..6): id i32, 1 i32
+    - NONE (0) / unknown: ничего
+    """
+    if sc_type == 1:  # ITEM
+        sc_id = reader.read_int32()
+        reader.read_int32()  # const 1
+        reader.read_int32()  # sharedReuseGroup
+        reader.read_int32()  # 0
+        reader.read_int32()  # 0
+        reader.read_int16()  # 0
+        reader.read_int16()  # 0
+        return sc_id, 0
+    if sc_type == 2:  # SKILL
+        sc_id = reader.read_int32()
+        level = reader.read_int32()
+        reader.read_byte()   # C5 pad
+        reader.read_int32()  # C6 const 1
+        return sc_id, level
+    if sc_type in (3, 4, 5, 6):  # ACTION/MACRO/RECIPE/BOOKMARK
+        sc_id = reader.read_int32()
+        reader.read_int32()  # const 1
+        return sc_id, 0
+    return 0, 0
+
+
 class ShortCutInitPacket(ServerPacket):
     """ShortCutInit (S→C, opcode 0x45): начальная раскладка action-bar.
 
-    Body: `i32 count` + `count` записей по 5×i32: `type, slot, id, level, characterType`.
-    `slot` закодирован как `slot + page*12` (0..119). См. docs/ACTIONS.md §10.4.
+    Body: `i32 count` + `count` записей переменной длины. Каждая запись
+    начинается с `type i32` и `slot i32` (где `slot = realSlot + page*12`,
+    0..119), далее идёт per-type тело — см. `_read_shortcut_body`. См.
+    docs/ACTIONS.md §10.4.
     """
 
     opcode: ClassVar[int] = 0x45
@@ -424,20 +459,19 @@ class ShortCutInitPacket(ServerPacket):
     def _read(self) -> None:
         count = self._reader.read_int32()
         for _ in range(count):
-            if self._reader.remaining() < 20:
+            if self._reader.remaining() < 8:
                 break
             sc_type = self._reader.read_int32()
             slot = self._reader.read_int32()
-            sc_id = self._reader.read_int32()
-            level = self._reader.read_int32()
-            self._reader.read_int32()  # characterType
+            sc_id, level = _read_shortcut_body(self._reader, sc_type)
             self.entries.append((sc_type, slot, sc_id, level))
 
 
 class ShortCutRegisterPacket(ServerPacket):
     """ShortCutRegister (S→C, opcode 0x44): одна запись action-bar.
 
-    Body: `type, slot, id, level, characterType` — 5×i32. См. docs/ACTIONS.md §10.2.
+    Body: `type i32, slot i32` + per-type тело (см. `_read_shortcut_body`).
+    См. docs/ACTIONS.md §10.2.
     """
 
     opcode: ClassVar[int] = 0x44
@@ -453,10 +487,7 @@ class ShortCutRegisterPacket(ServerPacket):
     def _read(self) -> None:
         self.type = self._reader.read_int32()
         self.slot = self._reader.read_int32()
-        self.id = self._reader.read_int32()
-        self.level = self._reader.read_int32()
-        if self._reader.remaining() >= 4:
-            self._reader.read_int32()  # characterType
+        self.id, self.level = _read_shortcut_body(self._reader, self.type)
 
 
 _ITEM_RECORD_FIXED = 62  # см. docs/INVENTORY.md §On-wire item record.

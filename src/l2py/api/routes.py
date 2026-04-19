@@ -246,6 +246,23 @@ async def next_target(request: Request) -> TargetIdResponse:
     return TargetIdResponse(id=nearest.object_id)
 
 
+# Клиентские дефолты F1–F12 (docs/ACTIONS.md §12). Сервер НЕ передаёт эту
+# раскладку в ShortCutInit — она хранится в клиентских .dat-файлах. Здесь
+# перечислены только те клавиши, дефолт которых реально порождает
+# client→server пакет (RequestActionUse); остальные — client-local UI.
+_FKEY_DEFAULT_ACTION: dict[int, int] = {
+    6: 0,  # Sit / Stand  -> RequestActionUse 0
+    7: 1,  # Walk / Run   -> RequestActionUse 1
+}
+_FKEY_CLIENT_LOCAL: dict[int, str] = {
+    1: "Help — client-local UI, нет серверного эквивалента",
+    9: "Party Info — client-local UI toggle",
+    10: "Main Menu — client-local UI toggle",
+    11: "Inventory — client-local UI toggle",
+    12: "Communication — client-local UI toggle",
+}
+
+
 @router.get(
     "/key/f{slot}",
     response_model=SendResult,
@@ -258,25 +275,40 @@ async def press_fkey(
     state = _state(request)
     encoded_slot = slot - 1  # page 0
     entry = state.shortcuts.get(encoded_slot)
-    if entry is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"F{slot}: слот action-bar пуст или ShortCutInit ещё не получен",
-        )
-    sc_type, sc_id, level = entry
-    if sc_type == 3:  # ACTION
-        packet: ClientPacket = RequestActionUsePacket(sc_id)
-    elif sc_type == 2:  # SKILL
-        packet = RequestMagicSkillUsePacket(sc_id)
-    elif sc_type == 1:  # ITEM
-        packet = UseItemPacket(sc_id)
-    else:
-        raise HTTPException(
-            status_code=409,
-            detail=f"F{slot}: тип шортката {sc_type} не поддерживается (MACRO/RECIPE/BOOKMARK)",
-        )
-    logger.debug("F%d dispatch: type=%d id=%d level=%d", slot, sc_type, sc_id, level)
-    return await _send(state, packet)
+    if entry is not None:
+        sc_type, sc_id, level = entry
+        if sc_type == 3:  # ACTION
+            packet: ClientPacket = RequestActionUsePacket(sc_id)
+        elif sc_type == 2:  # SKILL
+            packet = RequestMagicSkillUsePacket(sc_id)
+        elif sc_type == 1:  # ITEM
+            packet = UseItemPacket(sc_id)
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"F{slot}: тип шортката {sc_type} не поддерживается (MACRO/RECIPE/BOOKMARK)",
+            )
+        logger.debug("F%d dispatch: type=%d id=%d level=%d", slot, sc_type, sc_id, level)
+        return await _send(state, packet)
+
+    # Шорткат не зарегистрирован — попробуем клиентский дефолт.
+    default_action = _FKEY_DEFAULT_ACTION.get(slot)
+    if default_action is not None:
+        logger.debug("F%d dispatch: default RequestActionUse(%d)", slot, default_action)
+        return await _send(state, RequestActionUsePacket(default_action))
+
+    client_local = _FKEY_CLIENT_LOCAL.get(slot)
+    if client_local is not None:
+        raise HTTPException(status_code=409, detail=f"F{slot}: {client_local}")
+
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f"F{slot}: слот action-bar пуст; дефолт требует цель/контекст — "
+            "используйте /api/target/* или перетащите skill/item на F"
+            f"{slot} в клиенте"
+        ),
+    )
 
 
 __all__ = ["router"]
