@@ -331,10 +331,31 @@ class NetPingRequestPacket(ServerPacket):
         self.ping_id = self._reader.read_int32()
 
 
+class MyTargetSelectedPacket(ServerPacket):
+    """MyTargetSelected (S→C, opcode 0xA6): подтверждение выбора цели.
+
+    Body: i32 object_id, i32 color_distance. См. docs/ACTIONS.md §1.
+    """
+
+    opcode: ClassVar[int] = 0xA6
+    __slots__ = ("object_id", "color_distance")
+
+    def __init__(self, data: bytes) -> None:
+        self.object_id: int = 0
+        self.color_distance: int = 0
+        super().__init__(data)
+
+    def _read(self) -> None:
+        self.object_id = self._reader.read_int32()
+        if self._reader.remaining() >= 4:
+            self.color_distance = self._reader.read_int32()
+
+
 __all__ = [
     "KeyPacket",
     "CharSelectionInfoPacket",
     "CharSelectedPacket",
     "UserInfoPacket",
     "NetPingRequestPacket",
+    "MyTargetSelectedPacket",
 ]

@@ -8,8 +8,12 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from l2py.crypto.game_crypt import GameCrypt
+
+if TYPE_CHECKING:
+    from l2py.events import EventEmitter
 from l2py.models.character import CharacterInfo
 from l2py.network.game_connection import GameConnection
 from l2py.network.login_flow import LoginResult
@@ -55,19 +59,33 @@ class GameSession:
     character: CharacterInfo
     session_id: int
     _reader_task: asyncio.Task | None = field(default=None, repr=False)
+    emitter: "EventEmitter | None" = field(default=None, repr=False)
 
     async def run_keepalive(self) -> None:
         """Читает пакеты в цикле и отвечает на NetPingRequest.
 
+        Если задан `emitter`, на каждый входящий пакет эмитится
+        `PacketReceivedEvent` — это канал для внешних потребителей (например, API).
+
         Завершается при закрытии соединения. Предназначен для удержания
         сессии «в игре» — без ответа на ping сервер разрывает соединение.
         """
+        from l2py.events import PacketReceivedEvent
+
         while True:
             try:
                 opcode, data = await self.connection.read_packet()
             except (ConnectionError, asyncio.IncompleteReadError):
                 logger.info("Game connection closed, stopping keepalive loop")
                 return
+
+            if self.emitter is not None:
+                try:
+                    await self.emitter.emit(
+                        PacketReceivedEvent(opcode=opcode, data=data, source="game")
+                    )
+                except Exception:
+                    logger.exception("Error while emitting PacketReceivedEvent")
 
             if opcode == NetPingRequestPacket.opcode:
                 ping = NetPingRequestPacket(data)

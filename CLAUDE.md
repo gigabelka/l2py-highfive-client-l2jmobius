@@ -70,6 +70,10 @@ All values are little-endian. Framing: `u16 LE length` prefix that INCLUDES the 
 
 Typed event bus used by the flows to publish handshake milestones and incoming packets. Subscribe at the `GameSession` level.
 
+### External API ([src/l2py/api/](src/l2py/api/))
+
+FastAPI + uvicorn layer that exposes the live `GameSession` over HTTP and WebSocket. `ApiServer` ([src/l2py/api/server.py](src/l2py/api/server.py)) wraps `uvicorn.Server` with `install_signal_handlers=False` so it can share the event loop with `session.run_keepalive()` and still let `main()` see `KeyboardInterrupt`. Shared state lives in `ApiState` ([src/l2py/api/state.py](src/l2py/api/state.py)) — assign it to `session.emitter` so incoming packets fan out to WS subscribers ([src/l2py/api/ws.py](src/l2py/api/ws.py)). HTTP routes under `/api` ([src/l2py/api/routes.py](src/l2py/api/routes.py)) build `ClientPacket`s and push them via `session.connection.send_packet`; bind address comes from `L2PY_API_HOST` / `L2PY_API_PORT`. See [docs/API.md](docs/API.md) and [docs/EXAMPLES.md](docs/EXAMPLES.md).
+
 ## Protocol reference
 
 When touching packet encoding, crypto, or adding new opcodes, the authoritative specs live in [docs/](docs/):

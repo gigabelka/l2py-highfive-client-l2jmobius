@@ -178,6 +178,137 @@ class NetPingPacket(ClientPacket):
         self._writer.write_int32(self.ping_id)
 
 
+class ActionPacket(ClientPacket):
+    """Action (C→S, opcode 0x1F): клик по объекту / pick-up предмета.
+
+    Body: i32 object_id, i32 origin_x, i32 origin_y, i32 origin_z, u8 action_id.
+    См. docs/ACTIONS.md §1.
+    """
+
+    opcode: ClassVar[int] = 0x1F
+    __slots__ = ("object_id", "origin_x", "origin_y", "origin_z", "action_id")
+
+    def __init__(
+        self,
+        object_id: int,
+        origin_x: int,
+        origin_y: int,
+        origin_z: int,
+        action_id: int = 0,
+    ) -> None:
+        self.object_id = object_id
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self.origin_z = origin_z
+        self.action_id = action_id
+        super().__init__()
+
+    def _write(self) -> None:
+        self._writer.write_int32(self.object_id)
+        self._writer.write_int32(self.origin_x)
+        self._writer.write_int32(self.origin_y)
+        self._writer.write_int32(self.origin_z)
+        self._writer.write_byte(self.action_id & 0xFF)
+
+
+class AttackRequestPacket(ClientPacket):
+    """AttackRequest (C→S, opcode 0x32): атака по цели.
+
+    Body: i32 object_id, i32 origin_x, i32 origin_y, i32 origin_z, u8 attack_id
+    (0 = обычная, 1 = shift-click / forced). См. docs/ACTIONS.md §3.
+
+    Примечание: опкод 0x32 совпадает с серверным UserInfoPacket, но направления
+    разные — конфликта нет.
+    """
+
+    opcode: ClassVar[int] = 0x32
+    __slots__ = ("object_id", "origin_x", "origin_y", "origin_z", "attack_id")
+
+    def __init__(
+        self,
+        object_id: int,
+        origin_x: int,
+        origin_y: int,
+        origin_z: int,
+        attack_id: int = 0,
+    ) -> None:
+        self.object_id = object_id
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self.origin_z = origin_z
+        self.attack_id = attack_id
+        super().__init__()
+
+    def _write(self) -> None:
+        self._writer.write_int32(self.object_id)
+        self._writer.write_int32(self.origin_x)
+        self._writer.write_int32(self.origin_y)
+        self._writer.write_int32(self.origin_z)
+        self._writer.write_byte(self.attack_id & 0xFF)
+
+
+class RequestActionUsePacket(ClientPacket):
+    """RequestActionUse (C→S, opcode 0x56): активация action_id (sit/stand, social,
+    pet/summon/airship команды и т.д.).
+
+    Body: i32 action_id, i32 ctrl_pressed, u8 shift_pressed. См. docs/ACTIONS.md §9.1.
+    """
+
+    opcode: ClassVar[int] = 0x56
+    __slots__ = ("action_id", "ctrl", "shift")
+
+    def __init__(self, action_id: int, ctrl: bool = False, shift: bool = False) -> None:
+        self.action_id = action_id
+        self.ctrl = ctrl
+        self.shift = shift
+        super().__init__()
+
+    def _write(self) -> None:
+        self._writer.write_int32(self.action_id)
+        self._writer.write_int32(1 if self.ctrl else 0)
+        self._writer.write_byte(1 if self.shift else 0)
+
+
+class RequestMagicSkillUsePacket(ClientPacket):
+    """RequestMagicSkillUse (C→S, opcode 0x39): применение скилла.
+
+    Body: i32 skill_id, i32 ctrl_pressed, u8 shift_pressed.
+    """
+
+    opcode: ClassVar[int] = 0x39
+    __slots__ = ("skill_id", "ctrl", "shift")
+
+    def __init__(self, skill_id: int, ctrl: bool = False, shift: bool = False) -> None:
+        self.skill_id = skill_id
+        self.ctrl = ctrl
+        self.shift = shift
+        super().__init__()
+
+    def _write(self) -> None:
+        self._writer.write_int32(self.skill_id)
+        self._writer.write_int32(1 if self.ctrl else 0)
+        self._writer.write_byte(1 if self.shift else 0)
+
+
+class UseItemPacket(ClientPacket):
+    """UseItem (C→S, opcode 0x19 на CT 2.6 HighFive): использование предмета.
+
+    Body: i32 object_id, i32 ctrl_pressed.
+    """
+
+    opcode: ClassVar[int] = 0x19
+    __slots__ = ("object_id", "ctrl")
+
+    def __init__(self, object_id: int, ctrl: bool = False) -> None:
+        self.object_id = object_id
+        self.ctrl = ctrl
+        super().__init__()
+
+    def _write(self) -> None:
+        self._writer.write_int32(self.object_id)
+        self._writer.write_int32(1 if self.ctrl else 0)
+
+
 __all__ = [
     "ProtocolVersionPacket",
     "AuthLoginPacket",
@@ -185,4 +316,9 @@ __all__ = [
     "EnterWorldPacket",
     "RequestKeyMappingPacket",
     "NetPingPacket",
+    "ActionPacket",
+    "AttackRequestPacket",
+    "RequestActionUsePacket",
+    "RequestMagicSkillUsePacket",
+    "UseItemPacket",
 ]

@@ -32,6 +32,7 @@ class GameConnection:
         "_reader",
         "_writer",
         "_connected",
+        "_send_lock",
     )
 
     def __init__(self, host: str, port: int, crypt: "GameCrypt") -> None:
@@ -48,6 +49,7 @@ class GameConnection:
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._connected = False
+        self._send_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """Устанавливает TCP-соединение с сервером.
@@ -134,27 +136,24 @@ class GameConnection:
         if not self._connected or self._writer is None:
             raise ConnectionError("Not connected")
 
+        async with self._send_lock:
+            data = packet.to_bytes()
 
-        data = packet.to_bytes()
+            if raw:
+                encrypted = data
+            else:
+                encrypted = self._crypt.encrypt(data)
 
+            length = len(encrypted) + 2
+            packet_bytes = length.to_bytes(2, "little") + encrypted
 
-        if raw:
-            encrypted = data
-        else:
-            encrypted = self._crypt.encrypt(data)
+            self._writer.write(packet_bytes)
+            await self._writer.drain()
 
-
-        length = len(encrypted) + 2
-        packet_bytes = length.to_bytes(2, "little") + encrypted
-
-
-        self._writer.write(packet_bytes)
-        await self._writer.drain()
-
-        logger.debug(
-            f"[Game] Sent packet: opcode=0x{packet.opcode:02X}, "
-            f"length={len(data)}, raw={raw}"
-        )
+            logger.debug(
+                f"[Game] Sent packet: opcode=0x{packet.opcode:02X}, "
+                f"length={len(data)}, raw={raw}"
+            )
 
     async def close(self) -> None:
         """Закрывает соединение."""
