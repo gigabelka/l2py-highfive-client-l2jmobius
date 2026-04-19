@@ -6,6 +6,7 @@ from l2py.protocol.base import PacketWriter
 from l2py.protocol.game.opcode_names import OPCODE_NAMES, packet_name
 from l2py.protocol.game.serializer import (
     _REGISTRY,
+    decode_raw,
     packet_to_envelope,
     serialize_user_info,
 )
@@ -58,7 +59,10 @@ def test_unknown_opcode_returns_envelope_with_null_parsed():
     assert env["name"] == "Dummy"  # from OPCODE_NAMES
     assert env["source"] == "game"
     assert env["len"] == 3
-    assert env["hex"] == "010203"
+    assert env["raw"]["hex"] == "010203"
+    assert env["raw"]["bytes"] == [1, 2, 3]
+    assert env["raw"]["ascii"] == "..."
+    assert "u16_le" not in env["raw"]  # length 3 is not 2-aligned
     assert env["parsed"] is None
     assert env["parse_error"] is None
 
@@ -226,10 +230,51 @@ def test_truncated_payload_sets_hex_but_parse_survives():
     assert env["name"] == "UserInfo"
     # parser is tolerant, so parsed is set with defaults
     assert env["parsed"] is not None
-    assert env["hex"] == "0102"
+    assert env["raw"]["hex"] == "0102"
 
 
 # --- coverage invariants --------------------------------------------------
+
+
+def test_decode_raw_int_views():
+    # 8 bytes: two identical i32 values = 1, 2 → all aligned views must appear.
+    data = bytes.fromhex("0100000002000000")
+    dec = decode_raw(data)
+    assert dec["hex"] == "0100000002000000"
+    assert dec["len"] == 8
+    assert dec["bytes"] == [1, 0, 0, 0, 2, 0, 0, 0]
+    assert dec["u16_le"] == [1, 0, 2, 0]
+    assert dec["i32_le"] == [1, 2]
+    assert dec["u32_le"] == [1, 2]
+    assert dec["i64_le"] == [(2 << 32) | 1]
+    assert dec["ascii"] == "........"
+    assert "utf16le_strings" not in dec  # no printable UTF-16LE string
+
+
+def test_decode_raw_extracts_utf16le_strings():
+    data = "hero".encode("utf-16le") + b"\x00\x00" + b"\x11\x22"
+    dec = decode_raw(data)
+    assert dec["utf16le_strings"] == [{"offset": 0, "value": "hero", "byte_len": 10}]
+
+
+def test_decode_raw_empty():
+    dec = decode_raw(b"")
+    assert dec == {"hex": "", "len": 0, "bytes": [], "ascii": ""}
+
+
+def test_decode_raw_ascii_preview_shows_printable():
+    dec = decode_raw(b"\x00AB\xff")
+    assert dec["ascii"] == ".AB."
+
+
+def test_user_info_raw_tail_is_decoded_when_present():
+    payload = _write_user_info_fixture("hero") + b"\xaa\xbb\xcc\xdd"
+    env = packet_to_envelope(UserInfoPacket.opcode, payload, "game")
+    tail = env["parsed"]["raw_tail"]
+    assert tail is not None
+    assert tail["hex"] == "aabbccdd"
+    assert tail["bytes"] == [0xAA, 0xBB, 0xCC, 0xDD]
+    assert tail["u32_le"] == [0xDDCCBBAA]
 
 
 def test_every_registered_opcode_has_name():

@@ -26,6 +26,7 @@ The generic fallback is applied when no custom serializer exists.
 from __future__ import annotations
 
 import dataclasses
+import struct
 from collections.abc import Callable
 from typing import Any
 
@@ -103,10 +104,96 @@ STATUS_UPDATE_ATTR_NAMES: dict[int, str] = {
 }
 
 
+_ASCII_PRINTABLE_MIN = 0x20
+_ASCII_PRINTABLE_MAX = 0x7E
+_MIN_UTF16_STRING_LEN = 2  # chars; shorter hits = noise
+
+
+def _ascii_preview(b: bytes) -> str:
+    """Non-printable bytes collapsed to '.'; matches `hexdump -C` right column."""
+    return "".join(
+        chr(c) if _ASCII_PRINTABLE_MIN <= c <= _ASCII_PRINTABLE_MAX else "."
+        for c in b
+    )
+
+
+def _extract_utf16le_strings(b: bytes) -> list[dict[str, Any]]:
+    """Find null-terminated UTF-16LE strings aligned on any 2-byte boundary.
+
+    Most L2 packets put strings this way (see PacketReader.read_string). Any
+    run of printable BMP codepoints terminated by ``\\x00\\x00`` counts.
+    """
+    out: list[dict[str, Any]] = []
+    n = len(b)
+    i = 0
+    while i + 1 < n:
+        # Scan for a printable codepoint start.
+        if b[i + 1] != 0 or not (
+            _ASCII_PRINTABLE_MIN <= b[i] <= _ASCII_PRINTABLE_MAX
+        ):
+            i += 1
+            continue
+        start = i
+        j = i
+        chars: list[int] = []
+        while j + 1 < n and not (b[j] == 0 and b[j + 1] == 0):
+            # Printable BMP (ASCII subset for safety)
+            if b[j + 1] != 0 or not (
+                _ASCII_PRINTABLE_MIN <= b[j] <= _ASCII_PRINTABLE_MAX
+            ):
+                chars = []
+                break
+            chars.append(b[j])
+            j += 2
+        if chars and j + 1 < n and len(chars) >= _MIN_UTF16_STRING_LEN:
+            out.append(
+                {
+                    "offset": start,
+                    "value": bytes(chars).decode("ascii"),
+                    # total span incl. terminator, so callers can resume safely
+                    "byte_len": (j - start) + 2,
+                }
+            )
+            i = j + 2
+        else:
+            i = start + 1
+    return out
+
+
+def decode_raw(b: bytes) -> dict[str, Any]:
+    """Produce a human-readable breakdown of arbitrary packet bytes.
+
+    Always emits: ``hex``, ``len``, ``bytes`` (u8 array), ``ascii`` preview.
+    Conditionally emits aligned little-endian views (``u16_le``, ``i32_le``,
+    ``u32_le``, ``i64_le``) when the length fits — mirrors what a human would
+    eyeball in a hex dump. ``utf16le_strings`` is a best-effort scan for
+    printable ASCII strings terminated by ``\\x00\\x00``.
+    """
+    n = len(b)
+    out: dict[str, Any] = {
+        "hex": b.hex(),
+        "len": n,
+        "bytes": list(b),
+        "ascii": _ascii_preview(b),
+    }
+    if n % 2 == 0 and n > 0:
+        out["u16_le"] = list(struct.unpack(f"<{n // 2}H", b))
+    if n % 4 == 0 and n > 0:
+        out["i32_le"] = list(struct.unpack(f"<{n // 4}i", b))
+        out["u32_le"] = list(struct.unpack(f"<{n // 4}I", b))
+    if n % 8 == 0 and n > 0:
+        out["i64_le"] = list(struct.unpack(f"<{n // 8}q", b))
+    strings = _extract_utf16le_strings(b)
+    if strings:
+        out["utf16le_strings"] = strings
+    return out
+
+
 def _bytes_field(b: bytes) -> dict[str, Any] | None:
+    """Decode a byte blob (e.g. raw_tail) the same way as top-level `raw`."""
     if not b:
         return None
-    return {"hex": b.hex(), "len": len(b)}
+    return decode_raw(b)
 
 
 def _serialize_key(p: KeyPacket) -> dict[str, Any]:
@@ -337,7 +424,7 @@ def packet_to_envelope(opcode: int, data: bytes, source: str) -> dict[str, Any]:
         "name": packet_name(opcode, data),
         "source": source,
         "len": len(data),
-        "hex": data.hex(),
+        "raw": decode_raw(data),
         "parsed": None,
         "parse_error": None,
     }
@@ -357,6 +444,7 @@ def packet_to_envelope(opcode: int, data: bytes, source: str) -> dict[str, Any]:
 
 __all__ = [
     "packet_to_envelope",
+    "decode_raw",
     "serialize_user_info",
     "STATUS_UPDATE_TO_USER_INFO",
     "STATUS_UPDATE_ATTR_NAMES",
