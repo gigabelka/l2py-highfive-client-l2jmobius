@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Path, Request
@@ -223,8 +222,11 @@ async def debug_opcodes(request: Request) -> dict:
     summary="Выбрать ближайшего враждебного моба и вернуть его objectId",
 )
 async def next_target(request: Request) -> TargetIdResponse:
+    """Возвращает objectId ближайшего attackable NPC из кэша NpcInfo.
+
+    Никакие пакеты на сервер не отправляются — персонаж остаётся в покое.
+    """
     state = _state(request)
-    session = _require_session(state)
     sx, sy, sz = _origin(state)
 
     candidates = [
@@ -241,37 +243,7 @@ async def next_target(request: Request) -> TargetIdResponse:
         candidates,
         key=lambda n: (n.x - sx) ** 2 + (n.y - sy) ** 2 + (n.z - sz) ** 2,
     )
-
-    state.target_confirm_expected_id = nearest.object_id
-    state.target_confirm_event.clear()
-
-    try:
-        await session.connection.send_packet(
-            ActionPacket(nearest.object_id, sx, sy, sz, action_id=0)
-        )
-    except ConnectionError as exc:
-        state.target_confirm_expected_id = None
-        raise HTTPException(status_code=502, detail=f"send failed: {exc}") from exc
-
-    chosen_id = nearest.object_id
-    try:
-        await asyncio.wait_for(state.target_confirm_event.wait(), timeout=1.5)
-        confirmed = state.last_target_object_id
-    except TimeoutError:
-        # Сервер не прислал MyTargetSelected — либо моб уже таргет, либо опкод
-        # отличается на этой сборке. Считаем, что Action 0x1F принят, и
-        # возвращаем выбранный id (нижестоящий код может его использовать для
-        # AttackRequest / UseItem); last_target_object_id при этом не трогаем.
-        logger.info(
-            "next-target: no MyTargetSelected within 1.5s for objectId=%d; "
-            "assuming success",
-            chosen_id,
-        )
-        confirmed = chosen_id
-    finally:
-        state.target_confirm_expected_id = None
-
-    return TargetIdResponse(id=confirmed)
+    return TargetIdResponse(id=nearest.object_id)
 
 
 @router.get(
