@@ -80,8 +80,8 @@ ggAuthResponse = i32_le(gg[1:5])
 # 3 zeros + 16-byte GG nonce + 4 zeros + i32 GG digest + 4 zeros.
 # The server accepts an all-zero trailer, so a minimal client may send
 # bytes([0x00]) + rsaCipher + i32_le(0) + i32_le(0) + zeros(8) (137 bytes).
-plaintext = zeros(94) + ascii_right_padded(username, 14) + zeros(2)
-          + ascii_right_padded(password, 16) + zeros(2)               # 128 bytes
+plaintext = zeros(94) + ascii_right_padded(username, 14)
+          + ascii_right_padded(password, 16) + zeros(4)               # 128 bytes
 rsaCipher = rsa_encrypt_no_padding(plaintext, rsaModulus, e=65537)    # 128 bytes
 body = bytes([0x00]) + rsaCipher
      + i32_le(sessionId) + zeros(16) + i32_le(8) + zeros(3)
